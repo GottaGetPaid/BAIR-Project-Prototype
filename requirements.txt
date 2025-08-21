@@ -1,0 +1,7 @@
+flask>=3.0.0
+python-dotenv>=1.0.0
+transformers>=4.41.0
+accelerate>=0.30.0
+safetensors>=0.4.3
+# torch is intentionally not pinned; install a build compatible with your platform
+# Example: pip install torch --index-url https://download.pytorch.org/whl/cpu

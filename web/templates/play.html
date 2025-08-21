@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Play</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Play</h1>
+
+      <div class="panel">
+        <h3>State</h3>
+        <pre id="state">{{ snapshot.render }}</pre>
+      </div>
+
+      <div class="panel">
+        <h3>Controls</h3>
+        <form id="action-form">
+          <label for="action">Your action:</label>
+          <input id="action" name="action" placeholder="type action" />
+          <button type="submit">Submit</button>
+        </form>
+        <button id="model-step">Model Step</button>
+      </div>
+
+      <div class="panel">
+        <h3>Available Actions</h3>
+        <div id="actions">
+          {% for a in snapshot.actions %}
+            <button class="action-btn" data-action="{{ a }}">{{ a }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Log</h3>
+        <pre id="log"></pre>
+      </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>

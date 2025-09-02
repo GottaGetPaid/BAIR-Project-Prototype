@@ -15,6 +15,7 @@ class NoopProvider:
         temperature: Optional[float] = None,
     ) -> str:
         # Try to choose first available action if encoded in the last user message
+        return "pass"
         last = messages[-1]["content"] if messages else ""
         # naive parse for a line like: Actions: [a, b, c]
         marker = "Actions:"

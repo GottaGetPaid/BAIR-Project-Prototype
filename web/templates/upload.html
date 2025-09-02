@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Context Uploader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            min-height: 100vh;
+        }
+        .left-panel {
+            flex: 1;
+            padding: 20px;
+            background-color: #f4f4f4;
+            border-right: 1px solid #ccc;
+        }
+        .right-panel {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .form-container {
+            width: 100%;
+        }
+        .query-form-container {
+            flex-grow: 1; /* Allows this section to fill available space */
+            display: flex;
+            flex-direction: column;
+        }
+        .query-conversation {
+            flex-grow: 1;
+            overflow-y: auto; /* Makes this area scrollable */
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .query-form {
+            display: flex;
+            gap: 10px;
+        }
+        .query-form input {
+            flex-grow: 1;
+        }
+        .upload-form-container {
+            align-self: flex-end;
+            text-align: center;
+        }
+        input, button {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        .message-user {
+            background-color: #e0e0e0;
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            text-align: right;
+        }
+        .message-bot {
+            background-color: #d1e7dd;
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="left-panel">
+        <h2>JSON Content Display</h2>
+        <pre id="json-content"></pre>
+    </div>
+
+    <div class="right-panel">
+        <div class="form-container query-form-container">
+            <h3>Query Interface</h3>
+            <div id="query-conversation" class="query-conversation">
+                </div>
+            <form id="query-form" class="query-form">
+                <input type="text" id="query-input" placeholder="Enter your query...">
+                <button type="submit">Send</button>
+            </form>
+        </div>
+
+        <div class="form-container upload-form-container">
+            <h3>Upload a JSON file</h3>
+            <form id="upload-form">
+                <input type="file" name="file" id="file-input" accept=".json">
+                <button type="submit">Upload</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('upload-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert("Please select a file.");
+                return;
+            }
+
+            //display raw json
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const rawText = event.target.result;
+                document.getElementById('json-content').textContent = rawText;
+            };
+            reader.onerror = function(event) {
+                alert("Error reading: " + event.target.error.name);
+            };
+            reader.readAsText(file);
+
+            //send to backend
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                //print sucess
+                console.log(data.message);
+            })
+            .catch(error => {
+                console.error('Error during backend upload:', error);
+            });
+        });
+
+        document.getElementById('query-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const queryInput = document.getElementById('query-input');
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            // Display user message
+            const conversation = document.getElementById('query-conversation');
+            const userMessage = document.createElement('div');
+            userMessage.className = 'message-user';
+            userMessage.textContent = query;
+            conversation.appendChild(userMessage);
+            conversation.scrollTop = conversation.scrollHeight;
+
+            // Clear input
+            queryInput.value = '';
+
+            //send query to backend
+            const queryData = new FormData();
+            queryData.append('query', query);
+
+            fetch ('/query', {
+                method: 'POST',
+                body: queryData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Display bot response
+                const botMessage = document.createElement('div');
+                botMessage.className = 'message-bot';
+                botMessage.textContent = data.response;
+                conversation.appendChild(botMessage);
+                conversation.scrollTop = conversation.scrollHeight;
+            })
+            .catch(error => {
+                console.error('Error during backend query:', error);
+            });
+        });
+            
+    </script>
+
+</body>
+</html>

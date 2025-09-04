@@ -6,9 +6,9 @@ Message = Dict[str, str]
 
 def build_turn_messages(state_text: str, actions: List[str]) -> List[Message]:
     instructions = (
-        "You are playing a simple turn-based game.\n"
-        "Only respond with your chosen action, exactly matching one of the allowed actions.\n"
-        "Do not add any extra words."
+	"Using the context provided, answer the user's questions.\n"
+        "Choose your responses, making sure to provide comprehensive answers.\n"
+   	"Do not add any extra words; be as concise as possible."
     )
     user = (
         f"State:\n{state_text}\n\n"

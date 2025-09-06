@@ -14,3 +14,8 @@ class AppConfig:
 
     # Flask
     SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-secret")
+
+    # Speech-to-Text (STT)
+    # Options: "gemini" (Google Generative AI), "whisper" (OpenAI Whisper)
+    STT_BACKEND = os.getenv("STT_BACKEND", "gemini").lower()
+

@@ -48,6 +48,18 @@
         .query-form input {
             flex-grow: 1;
         }
+        .mic-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: 1px solid #aaa;
+            background: #fff;
+            cursor: pointer;
+        }
+        .mic-btn.recording {
+            background: #ffdddd;
+            border-color: #ff6b6b;
+        }
         .upload-form-container {
             align-self: flex-end;
             text-align: center;
@@ -86,7 +98,8 @@
             <div id="query-conversation" class="query-conversation">
                 </div>
             <form id="query-form" class="query-form">
-                <input type="text" id="query-input" placeholder="Enter your query...">
+                <input type="text" id="query-input" placeholder="Enter your query or use the mic...">
+                <button type="button" id="mic-btn" class="mic-btn" title="Start/Stop voice">🎤</button>
                 <button type="submit">Send</button>
             </form>
         </div>
@@ -99,89 +112,107 @@
             </form>
         </div>
     </div>
+<script>
+    // Voice input via MediaRecorder -> chunked upload -> STT backend
+    let mediaRecorder = null;
+    let isRecording = false;
+    let sttSid = null;
 
-    <script>
-        document.getElementById('upload-form').addEventListener('submit', function(e) {
-            e.preventDefault();
+    const micBtn = document.getElementById('mic-btn');
+    const queryInput = document.getElementById('query-input');
+    const sendBtn = document.querySelector('#query-form button[type="submit"]');
 
-            const fileInput = document.getElementById('file-input');
-            const file = fileInput.files[0];
+    function chooseAudioMime() {
+        const options = [
+            'audio/webm;codecs=opus', 'audio/webm',
+            'audio/ogg;codecs=opus', 'audio/ogg'
+        ];
+        for (const t of options) {
+            if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+        }
+        return '';
+    }
 
-            if (!file) {
-                alert("Please select a file.");
-                return;
-            }
+    function extForMime(m) {
+        if (!m) return 'webm';
+        if (m.includes('ogg')) return 'ogg';
+        return 'webm';
+    }
 
-            //display raw json
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const rawText = event.target.result;
-                document.getElementById('json-content').textContent = rawText;
-            };
-            reader.onerror = function(event) {
-                alert("Error reading: " + event.target.error.name);
-            };
-            reader.readAsText(file);
-
-            //send to backend
-            const formData = new FormData();
-            formData.append('file', file);
-
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                //print sucess
-                console.log(data.message);
-            })
-            .catch(error => {
-                console.error('Error during backend upload:', error);
-            });
-        });
-
-        document.getElementById('query-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const queryInput = document.getElementById('query-input');
-            const query = queryInput.value.trim();
-            if (!query) return;
-
-            // Display user message
-            const conversation = document.getElementById('query-conversation');
-            const userMessage = document.createElement('div');
-            userMessage.className = 'message-user';
-            userMessage.textContent = query;
-            conversation.appendChild(userMessage);
-            conversation.scrollTop = conversation.scrollHeight;
-
-            // Clear input
-            queryInput.value = '';
-
-            //send query to backend
-            const queryData = new FormData();
-            queryData.append('query', query);
-
-            fetch ('/query', {
-                method: 'POST',
-                body: queryData
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Display bot response
-                const botMessage = document.createElement('div');
-                botMessage.className = 'message-bot';
-                botMessage.textContent = data.response;
-                conversation.appendChild(botMessage);
-                conversation.scrollTop = conversation.scrollHeight;
-            })
-            .catch(error => {
-                console.error('Error during backend query:', error);
-            });
-        });
+    async function startRecording() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mimeType = chooseAudioMime();
+            mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
             
-    </script>
+            const res = await fetch('/stt/start', { method: 'POST' });
+            const data0 = await res.json();
+            if (!res.ok || !data0.stt_sid) {
+                throw new Error(data0.error || 'Failed to start STT session');
+            }
+            sttSid = data0.stt_sid;
+            if (sendBtn) sendBtn.disabled = true;
 
+            mediaRecorder.addEventListener('dataavailable', async (e) => {
+                if (e.data && e.data.size > 0 && isRecording) {
+                    const fd = new FormData();
+                    const ext = extForMime(mediaRecorder.mimeType);
+                    const file = new File([e.data], `chunk_${Date.now()}.${ext}`, { type: mediaRecorder.mimeType });
+                    fd.append('audio', file);
+                    try {
+                        // Just send the chunk, don't expect a transcription back
+                        await fetch('/stt/chunk', { method: 'POST', body: fd });
+                    } catch (err) { console.error('Chunk upload failed', err); }
+                }
+            });
+
+            mediaRecorder.start(2000); // Send a chunk every 2 seconds
+            isRecording = true;
+            micBtn.classList.add('recording');
+            queryInput.placeholder = "Recording... Click mic to stop.";
+        } catch (err) {
+            console.error('Mic error:', err);
+            alert('Unable to access microphone: ' + err.message);
+        }
+    }
+
+    async function stopRecording() {
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+
+        isRecording = false;
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        micBtn.classList.remove('recording');
+        if (sendBtn) sendBtn.disabled = false;
+        queryInput.placeholder = "Finalizing transcription...";
+
+        try {
+            const res = await fetch('/stt/stop', { method: 'POST' });
+            const data = await res.json();
+            if (data.text) {
+                queryInput.value = data.text;
+                sendBtn.click(); // Automatically submit the form
+            } else if (data.error) {
+                console.error('STT error:', data.error);
+                alert('Transcription failed: ' + data.error);
+            }
+        } catch (e) {
+            console.error('Failed to stop STT session:', e);
+            alert('An error occurred while finalizing transcription.');
+        } finally {
+            queryInput.placeholder = "Enter your query or use the mic...";
+            mediaRecorder = null;
+            sttSid = null;
+        }
+    }
+
+    micBtn?.addEventListener('click', async () => {
+        if (!isRecording) await startRecording(); else await stopRecording();
+    });
+
+ 
+    document.getElementById('upload-form').addEventListener('submit', function(e) { e.preventDefault(); /* ... your existing code ... */ });
+    document.getElementById('query-form').addEventListener('submit', function(e) { e.preventDefault(); /* ... your existing code ... */ });
+</script>
 </body>
 </html>

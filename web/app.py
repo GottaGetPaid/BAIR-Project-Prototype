@@ -4,6 +4,8 @@ import uuid
 
 import sys
 import os
+import google.generativeai as genai
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -130,12 +132,20 @@ def query():
 
         with open(QUERIES_FOLDER + '/queries.csv', 'a', encoding='utf-8') as f:
 
-            response_text = f"Query received: {query_text}"
+            #response_text = f"Query received: {query_text}"
 
-            f.write(f'{UPLOAD_FILE_COUNT},"{query_text}","{response_text}"\n')
+            print("Sending query to Gemini 1.5 Flash model...")
 
-        #print(f'Recieved query: {query_text}')
-        return jsonify({"response": response_text}), 200
+            genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            response = model.generate_content(f"Respond to this in exactly 1 word: {query_text}")
+
+            print(f'Query: {query_text}\nResponse: {response.text}')
+
+            f.write(f'{UPLOAD_FILE_COUNT},"{query_text}","{response.text}"\n')
+
+        
+            return jsonify({"response": response.text}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

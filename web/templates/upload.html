@@ -211,8 +211,85 @@
     });
 
  
-    document.getElementById('upload-form').addEventListener('submit', function(e) { e.preventDefault(); /* ... your existing code ... */ });
-    document.getElementById('query-form').addEventListener('submit', function(e) { e.preventDefault(); /* ... your existing code ... */ });
+    document.getElementById('upload-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert("Please select a file.");
+                return;
+            }
+
+            //display raw json
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const rawText = event.target.result;
+                document.getElementById('json-content').textContent = rawText;
+            };
+            reader.onerror = function(event) {
+                alert("Error reading: " + event.target.error.name);
+            };
+            reader.readAsText(file);
+
+            //send to backend
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                //print sucess
+                console.log(data.message);
+            })
+            .catch(error => {
+                console.error('Error during backend upload:', error);
+            });
+        });
+
+        document.getElementById('query-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const queryInput = document.getElementById('query-input');
+            const query = queryInput.value.trim();
+            if (!query) return;
+
+            // Display user message
+            const conversation = document.getElementById('query-conversation');
+            const userMessage = document.createElement('div');
+            userMessage.className = 'message-user';
+            userMessage.textContent = query;
+            conversation.appendChild(userMessage);
+            conversation.scrollTop = conversation.scrollHeight;
+
+            // Clear input
+            queryInput.value = '';
+
+            //send query to backend
+            const queryData = new FormData();
+            queryData.append('query', query);
+
+            fetch ('/query', {
+                method: 'POST',
+                body: queryData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Display bot response
+                const botMessage = document.createElement('div');
+                botMessage.className = 'message-bot';
+                botMessage.textContent = data.response;
+                conversation.appendChild(botMessage);
+                conversation.scrollTop = conversation.scrollHeight;
+            })
+            .catch(error => {
+                console.error('Error during backend query:', error);
+            });
+        });
 </script>
 </body>
 </html>

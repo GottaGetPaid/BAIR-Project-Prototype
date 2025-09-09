@@ -172,6 +172,7 @@ def stt_stop():
     text = ""
     try:
         backend = AppConfig.STT_BACKEND
+        backend = 'whisper_local'
         print(f"STT backend is set to: '{backend}'")
         
         if backend == 'gemini':
@@ -192,6 +193,12 @@ def stt_stop():
             with open(wav_path, 'rb') as audio_file:
                 tr = client.audio.transcriptions.create(model="whisper-1", file=audio_file)
                 text = tr.text if hasattr(tr, 'text') else ''
+        elif backend == 'whisper_local':
+            print("Transcribing with local Whisper...")
+            import whisper
+            model = whisper.load_model("tiny") 
+            result = model.transcribe(wav_path)
+            text = result.get("text", "")
         
         print(f"Transcription result: '{text}'")
         flask_session.pop("stt_sid", None)

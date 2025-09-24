@@ -1,0 +1,33 @@
+{
+  "sessionInfo": {
+    "sessionId": "e26480ca-f72a-470c-aadf-5f7fcb15653f",
+    "userId": "anonymous",
+    "startTimestamp": "2025-09-24T20:42:54.042Z",
+    "endTimestamp": "2025-09-24T20:43:47.886Z",
+    "llmModel": "gemini-1.5-flash-latest"
+  },
+  "context": {
+    "initialContent": "Find the sum of all the multiples of 3 and 5 between 1 and 1000. Also find the product of the first five prime numbers.",
+    "finalContent": "please insert an api key for a model"
+  },
+  "conversationLog": [
+    {
+      "turn": 1,
+      "role": "user",
+      "inputType": "text",
+      "content": "Find the sum of all the multiples of 3 and 5 between 1 and 1000. Also find the product of the first five prime numbers.",
+      "timestamp": "2025-09-24T20:43:24.987Z"
+    },
+    {
+      "turn": 2,
+      "role": "assistant",
+      "inputType": "model",
+      "content": "please insert an api key for a model",
+      "timestamp": "2025-09-24T20:43:25.021Z"
+    }
+  ],
+  "evaluation": {
+    "surveyResponses": {},
+    "userComments": ""
+  }
+}

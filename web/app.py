@@ -4,6 +4,8 @@ import uuid
 
 import sys
 import os
+import json
+import re
 import google.generativeai as genai
 import openai
 from werkzeug.utils import secure_filename
@@ -31,6 +33,9 @@ AUDIO_TMP = os.path.join(UPLOAD_FOLDER, 'audio_tmp')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(QUERIES_FOLDER, exist_ok=True)
 os.makedirs(AUDIO_TMP, exist_ok=True)
+REPO_ROOT = parent_dir
+TEST_SESSIONS_FOLDER = os.path.join(REPO_ROOT, 'test-sessions')
+os.makedirs(TEST_SESSIONS_FOLDER, exist_ok=True)
 UPLOAD_FILE_COUNT = len(os.listdir(UPLOAD_FOLDER))
 
 @app.route("/")
@@ -61,13 +66,130 @@ def query():
     try:
         with open(os.path.join(QUERIES_FOLDER, 'queries.csv'), 'a', encoding='utf-8') as f:
             print("Sending query to Gemini 1.5 Flash model...")
-            genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
-            response = model.generate_content(f"Respond to this in exactly 1 word: {query_text}")
-            print(f'Query: {query_text}\nResponse: {response.text}')
-            f.write(f'{UPLOAD_FILE_COUNT},"{query_text}","{response.text}"\n')
-            return jsonify({"response": response.text}), 200
+            api_key = os.environ.get("GOOGLE_API_KEY")
+            default_msg = "please insert an api key for a model"
+            response_text = default_msg
+            if api_key:
+                try:
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                    response = model.generate_content(f"Respond to this in exactly 1 sentence: {query_text}")
+                    response_text = getattr(response, 'text', None) or default_msg
+                except Exception as model_err:
+                    print(f"Model error: {model_err}")
+                    response_text = default_msg
+            else:
+                print("No GOOGLE_API_KEY found; returning default message.")
+            print(f'Query: {query_text}\nResponse: {response_text}')
+            f.write(f'{UPLOAD_FILE_COUNT},"{query_text}","{response_text}"\n')
+            return jsonify({"response": response_text}), 200
     except Exception as e: return jsonify({"error": str(e)}), 500
+
+# ----------------------------
+# JSON upload/parse route
+# ----------------------------
+
+def _extract_question_text(question_field) -> str:
+    """Extract concatenated user question content from the BFCL-like nested question structure."""
+    try:
+        texts = []
+        if isinstance(question_field, list):
+            # It may be list of lists of dicts
+            def walk(node):
+                if isinstance(node, dict):
+                    if node.get('role') == 'user' and 'content' in node:
+                        texts.append(str(node['content']))
+                elif isinstance(node, list):
+                    for item in node:
+                        walk(item)
+            walk(question_field)
+        elif isinstance(question_field, dict):
+            if question_field.get('role') == 'user' and 'content' in question_field:
+                texts.append(str(question_field['content']))
+        # Join with double newline to separate turns if multiple
+        return "\n\n".join(texts).strip()
+    except Exception:
+        return ""
+
+@app.route('/upload_json', methods=['POST'])
+def upload_json():
+    if 'file' not in request.files: return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '': return jsonify({"error": "No selected file"}), 400
+    try:
+        raw_text = file.read().decode('utf-8')
+        data_obj = json.loads(raw_text)
+        # Handle: either a single object, or a list of objects - take the first
+        entry = data_obj[0] if isinstance(data_obj, list) else data_obj
+        q_text = _extract_question_text(entry.get('question'))
+        functions = entry.get('function') or entry.get('functions') or []
+        parsed = {
+            'id': entry.get('id'),
+            'questionText': q_text,
+            'functions': functions
+        }
+        # Persist last parsed JSON in session storage (in-memory)
+        sid = flask_session.get('ui_sid') or str(uuid.uuid4())
+        flask_session['ui_sid'] = sid
+        SESSIONS[f'last_json:{sid}'] = parsed
+        return jsonify({"message": "JSON parsed successfully", "parsed": parsed, "raw": entry}), 200
+    except json.JSONDecodeError as je:
+        return jsonify({"error": f"Invalid JSON: {je}"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ----------------------------
+# Save chat route
+# ----------------------------
+
+def _slugify(value: str) -> str:
+    value = value or ''
+    value = re.sub(r'[^A-Za-z0-9_.-]+', '-', value)
+    return value.strip('-') or 'unknown'
+
+@app.route('/save_chat', methods=['POST'])
+def save_chat():
+    try:
+        payload = request.get_json(force=True, silent=False) or {}
+        # Ensure structure and fill defaults
+        now_iso = datetime.utcnow().isoformat() + 'Z'
+        session_info = payload.get('sessionInfo') or {}
+        session_info.setdefault('sessionId', str(uuid.uuid4()))
+        session_info.setdefault('userId', 'anonymous')
+        session_info.setdefault('startTimestamp', now_iso)
+        session_info.setdefault('endTimestamp', now_iso)
+        session_info.setdefault('llmModel', 'gemini-1.5-flash-latest')
+
+        context = payload.get('context') or {}
+        context.setdefault('initialContent', '')
+        context.setdefault('finalContent', '')
+
+        conversation_log = payload.get('conversationLog') or []
+        evaluation = payload.get('evaluation') or {"surveyResponses": {}, "userComments": ""}
+
+        final_payload = {
+            "sessionInfo": session_info,
+            "context": context,
+            "conversationLog": conversation_log,
+            "evaluation": evaluation,
+        }
+
+        # Build directory name: session-number-date-model-user
+        # Count existing sessions to create next number
+        existing = [d for d in os.listdir(TEST_SESSIONS_FOLDER) if os.path.isdir(os.path.join(TEST_SESSIONS_FOLDER, d))]
+        next_num = len(existing) + 1
+        date_str = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+        model_slug = _slugify(session_info.get('llmModel', 'model'))
+        user_slug = _slugify(session_info.get('userId', 'user'))
+        dir_name = f"{next_num}-{date_str}-{model_slug}-{user_slug}"
+        out_dir = os.path.join(TEST_SESSIONS_FOLDER, dir_name)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, 'session-data.json')
+        with open(out_path, 'w', encoding='utf-8') as w:
+            json.dump(final_payload, w, ensure_ascii=False, indent=2)
+        return jsonify({"message": "Chat saved", "path": out_path, "dirName": dir_name}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ----------------------------
 # Speech-to-Text (STT) routes

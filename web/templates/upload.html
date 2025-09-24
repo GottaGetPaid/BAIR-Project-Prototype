@@ -88,7 +88,11 @@
 <body>
 
     <div class="left-panel">
-        <h2>JSON Content Display</h2>
+        <h2>JSON Content</h2>
+        <div id="json-meta"></div>
+        <h3>Functions</h3>
+        <ul id="json-functions"></ul>
+        <h3>Raw JSON</h3>
         <pre id="json-content"></pre>
     </div>
 
@@ -110,9 +114,15 @@
                 <input type="file" name="file" id="file-input" accept=".json">
                 <button type="submit">Upload</button>
             </form>
+            <button id="save-chat-btn" style="margin-top:10px;">Save Chat</button>
         </div>
     </div>
 <script>
+    // Track conversation log for saving later
+    const conversationLog = [];
+    let sessionStart = new Date().toISOString();
+    let lastParsed = null;
+
     // Voice input via MediaRecorder -> chunked upload -> STT backend
     let mediaRecorder = null;
     let isRecording = false;
@@ -233,21 +243,51 @@
             };
             reader.readAsText(file);
 
-            //send to backend
+            //send to backend for JSON parsing and UI hydration
             const formData = new FormData();
             formData.append('file', file);
 
-            fetch('/upload', {
+            fetch('/upload_json', {
                 method: 'POST',
                 body: formData
             })
             .then(response => response.json())
             .then(data => {
-                //print sucess
+                if (data.error) {
+                    console.error('JSON parse error:', data.error);
+                    alert('JSON parse error: ' + data.error);
+                    return;
+                }
                 console.log(data.message);
+                lastParsed = data.parsed;
+                // Populate left side meta and functions
+                const metaDiv = document.getElementById('json-meta');
+                metaDiv.innerHTML = '';
+                const idP = document.createElement('p');
+                idP.textContent = 'ID: ' + (lastParsed.id || '(none)');
+                const qP = document.createElement('p');
+                qP.textContent = 'Question: ' + (lastParsed.questionText || '');
+                metaDiv.appendChild(idP);
+                metaDiv.appendChild(qP);
+
+                const fnList = document.getElementById('json-functions');
+                fnList.innerHTML = '';
+                (lastParsed.functions || []).forEach(fn => {
+                    const li = document.createElement('li');
+                    li.textContent = `${fn.name || '(unnamed)'} — ${fn.description || ''}`;
+                    fnList.appendChild(li);
+                });
+
+                // Auto-submit the question into the chat
+                const q = (lastParsed.questionText || '').trim();
+                if (q) {
+                    const queryInput = document.getElementById('query-input');
+                    queryInput.value = q;
+                    document.querySelector('#query-form button[type="submit"]').click();
+                }
             })
             .catch(error => {
-                console.error('Error during backend upload:', error);
+                console.error('Error during backend JSON upload:', error);
             });
         });
 
@@ -266,6 +306,15 @@
             conversation.appendChild(userMessage);
             conversation.scrollTop = conversation.scrollHeight;
 
+            // Log turn
+            conversationLog.push({
+                turn: conversationLog.length + 1,
+                role: 'user',
+                inputType: 'text',
+                content: query,
+                timestamp: new Date().toISOString()
+            });
+
             // Clear input
             queryInput.value = '';
 
@@ -282,12 +331,59 @@
                 // Display bot response
                 const botMessage = document.createElement('div');
                 botMessage.className = 'message-bot';
-                botMessage.textContent = data.response;
+                botMessage.textContent = data.response || (data.error ? ('Error: ' + data.error) : '');
                 conversation.appendChild(botMessage);
                 conversation.scrollTop = conversation.scrollHeight;
+
+                // Log bot turn
+                conversationLog.push({
+                    turn: conversationLog.length + 1,
+                    role: 'assistant',
+                    inputType: 'model',
+                    content: botMessage.textContent,
+                    timestamp: new Date().toISOString()
+                });
             })
             .catch(error => {
                 console.error('Error during backend query:', error);
+            });
+        });
+
+        // Save chat button handler
+        document.getElementById('save-chat-btn').addEventListener('click', function() {
+            const payload = {
+                sessionInfo: {
+                    sessionId: crypto.randomUUID(),
+                    userId: 'anonymous',
+                    startTimestamp: sessionStart,
+                    endTimestamp: new Date().toISOString(),
+                    llmModel: 'gemini-1.5-flash-latest'
+                },
+                context: {
+                    initialContent: lastParsed?.questionText || '',
+                    finalContent: conversationLog.length ? conversationLog[conversationLog.length - 1].content : ''
+                },
+                conversationLog: conversationLog,
+                evaluation: {
+                    surveyResponses: {},
+                    userComments: ''
+                }
+            };
+            fetch('/save_chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.error) {
+                    alert('Failed to save: ' + d.error);
+                } else {
+                    alert('Saved: ' + d.dirName);
+                }
+            })
+            .catch(err => {
+                alert('Save error: ' + err);
             });
         });
 </script>

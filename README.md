@@ -1,76 +1,165 @@
-# Open Self-Play Template
+## BAIR Project Prototype — Web App Guide
 
-This is a minimal, extensible template inspired by `lm-selfplay`, designed to:
+This repository contains a simple Flask web app for experimenting with LLM prompts using BFCL-style JSON inputs. It lets you:
 
-- Use pluggable language models, including local open models (e.g., Llama via Hugging Face Transformers).
-- Support custom turn-based games via a simple Game interface (you implement your own game later).
-- Provide a minimal Flask web UI you can redesign later.
+- Upload a JSON describing a prompt and its callable tools (toolboxes and tools).
+- Preview the JSON on the left (including a grouped Tools & Toolboxes view and a raw JSON toggle).
+- Auto-submit the JSON’s question to a chat on the right.
+- Save the chat as structured JSON under `test-sessions/`.
+- Optional: record a short voice query (local Whisper or Gemini STT if configured).
 
-## Quick Start
+The “model” response defaults to a placeholder (“please insert an api key for a model”) unless a valid API key and SDK is configured.
 
-1. Create and activate a Python 3.10+ environment.
-2. Install dependencies:
+---
 
+## Quick Start (Windows PowerShell)
+
+1) Create and activate a virtual environment (Python 3.10+):
+
+```powershell
+python -m venv .\venv
+.\venv\Scripts\Activate.ps1
 ```
+
+2) Install dependencies:
+
+```powershell
 pip install -r requirements.txt
 ```
 
-3. Configure environment (optional):
+3) Run the app (either command works):
 
-- Copy `.env.example` to `.env` and adjust values.
-- To use a local HF model, set `MODEL_BACKEND=huggingface`, `HF_MODEL_ID` to a model id or local path.
-
-4. Run the web app:
-
-```
-export FLASK_APP=web/app.py
-flask run --debug
+```powershell
+python .\web\app.py
+# or
+$env:FLASK_APP = "web/app.py"; flask run --debug
 ```
 
-Then open http://127.0.0.1:5000
+Open http://127.0.0.1:5000 in your browser.
 
-## Structure
+---
 
-- `models/`
-  - `base.py`: Model provider interface and loader.
-  - `huggingface_provider.py`: Local/remote HF model (Llama etc.).
-  - `noop_provider.py`: Dev stub model (chooses first available action or "pass").
-- `games/`
-  - `base_game.py`: Abstract game interface for your custom game.
-  - `template_game.py`: Minimal, commented skeleton to copy for your game.
-- `engine/`
-  - `session.py`: Orchestrates turn-taking between players and the game.
-  - `prompts.py`: Prompt helpers (lightweight, optional).
-- `web/`
-  - `app.py`: Flask app with simple routes.
-  - `templates/`: `index.html`, `play.html` minimal UI.
-  - `static/`: `styles.css` and a tiny `app.js`.
-- `config.py`: Centralized config via env vars.
+## Using the Site
 
-## Implement Your Game
+Left panel: Prompt toolbox Preview
+- Theme button toggles light/dark (persists via localStorage).
+- Tools & Toolboxes: functions are grouped by toolbox (prefix before the dot). Each toolbox is collapsible, and each tool shows its description and parameter schema.
+- Raw JSON: hidden by default; click “Show/Hide” to toggle.
 
-Implement a new game by subclassing `SimpleTurnGame` in `games/base_game.py`.
-See `games/template_game.py` for a guided starting point. Plug your new game into the web app by updating the factory in `web/app.py` or via config.
+Right panel: Chat & Upload
+- Query Interface: type a message or use the mic button for voice input (optional; see Voice Input below).
+- Upload a JSON file: choose a BFCL-style JSON file and click Upload. The app will:
+  - Display the JSON details on the left (ID, Question, Tools & Toolboxes, Raw JSON toggle).
+  - Auto-fill and submit the question into the chat on the right.
+- Save Chat: persists the current conversation to disk (see Where chats are saved).
 
-## Model Backends
+Sample JSON
+- A ready-to-use example is provided: `queries/BFCL_single.json`.
+- Expected shape (simplified):
+  - `id`: string
+  - `question`: nested list(s) of turns with `{ role: 'user', content: '...' }`
+  - `function` (or `functions`): array of tool specs with `name`, `description`, and `parameters` schema
+- Example tool naming: `math_toolkit.sum_of_multiples` where `math_toolkit` is the toolbox and `sum_of_multiples` is the tool.
 
-- `huggingface` (recommended for local open models):
-  - Set `MODEL_BACKEND=huggingface`
-  - Set `HF_MODEL_ID` to a model id (e.g., `meta-llama/Meta-Llama-3-8B-Instruct`) or a local directory path.
-  - Optional: `HF_DEVICE` (e.g., `cpu`, `cuda:0`), `HF_MAX_NEW_TOKENS`, `HF_TEMPERATURE`.
-- `noop` (dev): always available and fast.
+Model response
+- If no `GOOGLE_API_KEY` is present or the `google-generativeai` package is not installed, the backend will return a default response: "please insert an api key for a model".
 
-You can add more providers by implementing `ModelProvider` in `models/base.py` and extending `load_model_provider()`.
+---
 
-## CLI (optional)
+## Where chats are saved (and how)
 
-Run a quick self-play loop without the UI:
+When you click “Save Chat”, the app writes a session folder and JSON file here:
 
 ```
-python -m engine.session --backend noop --steps 5
+test-sessions/
+  <N>-<YYYYMMDD-HHMMSS>-<model>-<user>/
+    session-data.json
 ```
 
-## Notes
+- N is an incrementing number.
+- model and user are slugified from session info (defaults to `gemini-1.5-flash-latest` and `anonymous`).
 
-- Torch installs can be large; if you're only testing the UI, start with `MODEL_BACKEND=noop`.
-- The project is now root-based (no `open-selfplay/` subfolder). If you still have that directory from a previous layout, you can remove it.
+File contents follow this structure:
+
+```json
+{
+  "sessionInfo": {
+    "sessionId": "...",
+    "userId": "anonymous",
+    "startTimestamp": "...",
+    "endTimestamp": "...",
+    "llmModel": "gemini-1.5-flash-latest"
+  },
+  "context": {
+    "initialContent": "...",  
+    "finalContent": "..."     
+  },
+  "conversationLog": [
+    { "turn": 1, "role": "user", "inputType": "text",  "content": "...", "timestamp": "..." },
+    { "turn": 2, "role": "assistant", "inputType": "model", "content": "...", "timestamp": "..." }
+  ],
+  "evaluation": {
+    "surveyResponses": {},
+    "userComments": ""
+  }
+}
+```
+
+---
+
+## JSON format tips
+
+- The app supports either a single object or an array of objects (it will pick the first).
+- `question` is parsed for user content (nested arrays of `{ role, content }`). That content is auto-submitted to the chat.
+- Tools are grouped by the prefix in `name` before the first `.` to form a toolbox.
+
+---
+
+## Optional: Voice input
+
+- Mic button records short audio, sends it to the backend, and the transcription is auto-submitted as the query.
+- Local Whisper (default path in code): requires FFmpeg and the `openai-whisper` Python package.
+  - Install FFmpeg separately (ensure it’s on PATH).
+  - Install Whisper: `pip install openai-whisper`
+- Gemini STT (alternative): set `STT_BACKEND=gemini` and export `GOOGLE_API_KEY`, plus install the SDK: `pip install google-generativeai`.
+
+If you don’t need voice, you can ignore the mic button.
+
+---
+
+## Optional: Configure a real model
+
+By default, the app returns a placeholder message. To use Gemini for text responses:
+
+```powershell
+# In PowerShell (current session)
+$env:GOOGLE_API_KEY = "<your_api_key>"
+pip install google-generativeai
+```
+
+Rerun the app. The `/query` endpoint will call `gemini-1.5-flash-latest` when the key and package are available.
+
+---
+
+## Minimal self-play (for later)
+
+The repository includes a minimal turn-based “self-play” engine (not wired to the web UI yet):
+
+- `engine/` orchestrates turn-taking.
+- `games/template_game.py` shows how to implement a game.
+
+---
+
+## Repository layout
+
+- `web/` — Flask app
+  - `app.py` — backend routes for JSON upload/parse, chat, voice STT, and saving chats
+  - `templates/upload.html` — two-panel UI with toolbox visualization and dark mode
+  - `static/` — shared assets
+- `queries/` — sample JSONs (`BFCL_single.json`)
+- `test-sessions/` — generated chat sessions
+- `engine/`, `games/` — basic self-play scaffolding 
+- `models/` — model provider scaffolding (optional for now)
+- `config.py` — environment configuration
+
+If you only want to test the web features, you don’t need any large model downloads.

@@ -94,6 +94,23 @@
         .hidden { display: none; }
         .inline-controls { display: flex; gap: 8px; align-items: center; }
         pre { background: var(--bg); border: 1px solid var(--panel-border); border-radius: 8px; padding: 10px; max-height: 300px; overflow: auto; }
+        /* Toolbox view */
+        #toolbox-view { margin-bottom: 8px; }
+        details.toolbox { border: 1px solid var(--panel-border); border-radius: 8px; margin-bottom: 8px; background: var(--bg); }
+        details.toolbox > summary { cursor: pointer; padding: 8px 10px; font-weight: 600; list-style: none; }
+        details.toolbox > summary::-webkit-details-marker { display: none; }
+        details.toolbox > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--muted-text); }
+        details.toolbox[open] > summary::before { content: '\25BE'; }
+        .badge { display: inline-block; margin-left: 8px; padding: 0 6px; font-size: 12px; line-height: 18px; border-radius: 10px; background: var(--panel-bg); border: 1px solid var(--panel-border); color: var(--muted-text); }
+        ul.tool-list { list-style: none; margin: 0; padding: 6px 10px 10px 10px; }
+        ul.tool-list li { margin: 6px 0; }
+        details.tool { border: 1px dashed var(--panel-border); border-radius: 6px; background: var(--panel-bg); }
+        details.tool > summary { cursor: pointer; padding: 6px 8px; list-style: none; font-weight: 500; }
+        details.tool > summary::-webkit-details-marker { display: none; }
+        details.tool > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--muted-text); }
+        details.tool[open] > summary::before { content: '\25BE'; }
+        .tool-desc { padding: 0 8px 8px 8px; color: var(--muted-text); font-size: 13px; }
+        .tool-params { margin: 0 8px 8px 8px; max-height: 200px; }
     </style>
 </head>
 <body>
@@ -101,14 +118,14 @@
     <div class="left-panel">
         <div class="top-bar">
             <div>
-                <div class="title">BFCL JSON Preview</div>
-                <div class="subtle">Upload and auto-submit a prompt</div>
+                <div class="title">Model Resources</div>
+                <div class="subtle">See what functions and tools are being used</div>
             </div>
             <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
         </div>
         <div id="json-meta"></div>
-        <div class="section-title inline-controls"><span>Functions</span></div>
-        <ul id="json-functions"></ul>
+    <div class="section-title inline-controls"><span>Tools & Toolboxes</span></div>
+    <div id="toolbox-view"></div>
         <div class="section-title inline-controls">
             <span>Raw JSON</span>
             <button id="toggle-raw-btn" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px;">Show</button>
@@ -314,13 +331,7 @@
                 metaDiv.appendChild(idP);
                 metaDiv.appendChild(qP);
 
-                const fnList = document.getElementById('json-functions');
-                fnList.innerHTML = '';
-                (lastParsed.functions || []).forEach(fn => {
-                    const li = document.createElement('li');
-                    li.textContent = `${fn.name || '(unnamed)'} — ${fn.description || ''}`;
-                    fnList.appendChild(li);
-                });
+                renderToolboxView(lastParsed.functions || []);
 
                 // Auto-submit the question into the chat
                 const q = (lastParsed.questionText || '').trim();
@@ -430,6 +441,52 @@
                 alert('Save error: ' + err);
             });
         });
+
+        // Build toolbox view (group by toolbox prefix of name)
+        function renderToolboxView(functions){
+            const container = document.getElementById('toolbox-view');
+            container.innerHTML = '';
+            if (!functions || !functions.length){
+                const p = document.createElement('p'); p.className = 'subtle'; p.textContent = 'No tools found in JSON.'; container.appendChild(p); return;
+            }
+            const groups = {};
+            for (const fn of functions){
+                const full = (fn.name || '').trim();
+                let toolbox = 'misc';
+                let tool = full || '(unnamed)';
+                if (full.includes('.')){
+                    const idx = full.indexOf('.');
+                    toolbox = full.slice(0, idx) || 'misc';
+                    tool = full.slice(idx+1) || '(unnamed)';
+                }
+                if (!groups[toolbox]) groups[toolbox] = [];
+                groups[toolbox].push({ tool, desc: fn.description || '', params: fn.parameters });
+            }
+
+            const toolboxNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+            for (const name of toolboxNames){
+                const items = groups[name];
+                const details = document.createElement('details');
+                details.className = 'toolbox';
+                // Keep closed by default to avoid clutter
+                const summary = document.createElement('summary');
+                summary.innerHTML = `${name} <span class="badge">${items.length}</span>`;
+                details.appendChild(summary);
+                const ul = document.createElement('ul');
+                ul.className = 'tool-list';
+                for (const it of items){
+                    const li = document.createElement('li');
+                    const d = document.createElement('details'); d.className = 'tool';
+                    const s = document.createElement('summary'); s.textContent = it.tool; d.appendChild(s);
+                    if (it.desc){ const desc = document.createElement('div'); desc.className = 'tool-desc'; desc.textContent = it.desc; d.appendChild(desc); }
+                    if (it.params){ const pre = document.createElement('pre'); pre.className = 'tool-params'; pre.textContent = JSON.stringify(it.params, null, 2); d.appendChild(pre); }
+                    li.appendChild(d);
+                    ul.appendChild(li);
+                }
+                details.appendChild(ul);
+                container.appendChild(details);
+            }
+        }
 </script>
 </body>
 </html>

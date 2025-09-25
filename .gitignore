@@ -1,5 +1,9 @@
 .env
 venv/
+.venv/
 *.webm
-web/uploaded_files
+uploaded_files/
+__pycache__/
+test-sessions/
 queries/queries.csv
+.DS_Store

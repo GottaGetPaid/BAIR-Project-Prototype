@@ -93,7 +93,7 @@ Right panel: Chat & Upload
 - Save Chat: persists the current conversation to disk (see Where chats are saved).
 
 Sample JSON
-- A ready-to-use example is provided: `queries/BFCL_single.json`.
+- Ready-to-use examples are provided in the `queries/` directory, including `BFCL_single.json` and `BFCL_multiple.jsonl`.
 - Expected shape (simplified):
   - `id`: string
   - `question`: nested list(s) of turns with `{ role: 'user', content: '...' }`
@@ -198,9 +198,9 @@ The repository includes a minimal turn-based “self-play” engine (not wired t
 - `web/` — Flask app
   - `app.py` — backend routes for JSON upload/parse, chat, voice STT, and saving chats
   - `templates/upload.html` — two-panel UI with toolbox visualization and dark mode
-  - `static/` — shared assets
-- `queries/` — sample JSONs (`BFCL_single.json`)
-- `test-sessions/` — generated chat sessions
+  - `static/styles.css` — CSS for the web app
+- `queries/` — sample JSONs (`BFCL_single.json`, `BFCL_multiple.jsonl`)
+- `test-sessions/` — generated chat sessions (ignored by git)
 - `engine/`, `games/` — basic self-play scaffolding 
 - `models/` — model provider scaffolding (optional for now)
 - `config.py` — environment configuration

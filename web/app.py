@@ -6,7 +6,10 @@ import sys
 import os
 import json
 import re
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None  # Allow app to run without the package; endpoints will fallback
 import openai
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -66,10 +69,10 @@ def query():
     try:
         with open(os.path.join(QUERIES_FOLDER, 'queries.csv'), 'a', encoding='utf-8') as f:
             print("Sending query to Gemini 1.5 Flash model...")
-            api_key = os.environ.get("GOOGLE_API_KEY")
+            api_key = os.environ.get("GOOGLE_API_KEY") if genai else None
             default_msg = "please insert an api key for a model"
             response_text = default_msg
-            if api_key:
+            if api_key and genai is not None:
                 try:
                     genai.configure(api_key=api_key)
                     model = genai.GenerativeModel('gemini-1.5-flash-latest')
@@ -79,7 +82,10 @@ def query():
                     print(f"Model error: {model_err}")
                     response_text = default_msg
             else:
-                print("No GOOGLE_API_KEY found; returning default message.")
+                if not api_key:
+                    print("No GOOGLE_API_KEY found; returning default message.")
+                if genai is None:
+                    print("google-generativeai is not installed; returning default message.")
             print(f'Query: {query_text}\nResponse: {response_text}')
             f.write(f'{UPLOAD_FILE_COUNT},"{query_text}","{response_text}"\n')
             return jsonify({"response": response_text}), 200
@@ -298,6 +304,8 @@ def stt_stop():
         print(f"STT backend is set to: '{backend}'")
         
         if backend == 'gemini':
+            if genai is None:
+                return jsonify({"text": "", "error": "Gemini STT requires google-generativeai. Please install it or switch backend."}), 200
             genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
             stt_model = genai.GenerativeModel("gemini-1.5-flash-latest")
             uploaded_file = _genai_upload_and_wait(wav_path) # Upload the .wav file

@@ -17,10 +17,12 @@
         </div>
         <div id="json-meta"></div>
         <div id="entry-list-container" class="hidden">
-            <div class="section-title">Entries</div>
+            <div class="section-title">JSON Entries</div>
             <div id="entry-list"></div>
         </div>
-    <div class="section-title inline-controls"><span>Tools & Toolboxes</span></div>
+
+        <div id="question-display" style="margin-top: auto;"></div>
+    <div class="section-title inline-controls"><span>Tools</span></div>
     <div id="toolbox-view"></div>
         <div class="section-title inline-controls">
             <span>Raw JSON</span>
@@ -74,6 +76,7 @@
     const conversationLog = [];
     let sessionStart = new Date().toISOString();
     let lastParsed = null;
+    let allEntries = []; // Global store for unique entries
 
     // Raw JSON toggler
     const rawPre = document.getElementById('json-content');
@@ -222,31 +225,25 @@
                 const entries = data.parsed_list || [];
                 if (!entries.length) return;
 
-                const entryListContainer = document.getElementById('entry-list-container');
-                const entryList = document.getElementById('entry-list');
+                // Merge new entries, ensuring no duplicates based on ID
+                let newEntriesAdded = false;
+                entries.forEach(newEntry => {
+                    if (newEntry.id && !allEntries.some(existing => existing.id === newEntry.id)) {
+                        allEntries.push(newEntry);
+                        newEntriesAdded = true;
+                    }
+                });
 
-                if (entries.length > 1) {
-                    entryListContainer.classList.remove('hidden');
-                    entryList.innerHTML = '';
-                    entries.forEach((entry, index) => {
-                        const btn = document.createElement('button');
-                        btn.textContent = entry.id || `Entry ${index + 1}`;
-                        btn.className = 'btn entry-btn';
-                        btn.addEventListener('click', () => {
-                            renderEntry(entry);
-                            document.querySelectorAll('.entry-btn').forEach(b => b.classList.remove('active'));
-                            btn.classList.add('active');
-                        });
-                        entryList.appendChild(btn);
-                    });
-                } else {
-                    entryListContainer.classList.add('hidden');
-                }
+                renderEntryList();
+                renderToolboxView(); // Render the unified toolbox
 
-                // Render the first entry by default
-                renderEntry(entries[0]);
-                if (entryList.firstChild) {
-                    entryList.firstChild.classList.add('active');
+                // If this is the first upload or new entries were added,
+                // render the details of the first overall entry.
+                if (allEntries.length > 0 && newEntriesAdded) {
+                    renderEntry(allEntries[0]);
+                    // Highlight the first entry button as active
+                    const firstBtn = document.querySelector('.entry-btn');
+                    if(firstBtn) firstBtn.classList.add('active');
                 }
             })
             .catch(error => {
@@ -313,6 +310,55 @@
         });
 
         // Save chat button handler
+        function renderEntryList() {
+            const entryListContainer = document.getElementById('entry-list-container');
+            const entryList = document.getElementById('entry-list');
+            entryList.innerHTML = '';
+
+            if (allEntries.length > 1) {
+                entryListContainer.classList.remove('hidden');
+            } else {
+                entryListContainer.classList.add('hidden');
+            }
+
+            allEntries.forEach((entry, index) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'entry-item-wrapper';
+
+                const btn = document.createElement('button');
+                btn.textContent = entry.id || `Entry ${index + 1}`;
+                btn.className = 'btn entry-btn';
+                btn.dataset.entryId = entry.id;
+                btn.addEventListener('click', () => {
+                    renderEntry(entry);
+                    document.querySelectorAll('.entry-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                });
+
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '×';
+                removeBtn.className = 'btn-remove-entry';
+                removeBtn.title = 'Remove entry';
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent the main button click
+                    allEntries = allEntries.filter(e => e.id !== entry.id);
+                    renderEntryList();
+                    renderToolboxView(); // Re-render the unified toolbox
+                    // Optional: Clear the view if the active entry was removed
+                    if (lastParsed && lastParsed.id === entry.id) {
+                        document.getElementById('json-meta').innerHTML = '';
+                        document.getElementById('question-display').innerHTML = '';
+                        document.getElementById('json-content').textContent = '';
+                        lastParsed = null;
+                    }
+                });
+
+                wrapper.appendChild(btn);
+                wrapper.appendChild(removeBtn);
+                entryList.appendChild(wrapper);
+            });
+        }
+
         document.getElementById('save-chat-btn').addEventListener('click', function() {
             const payload = {
                 sessionInfo: {
@@ -353,37 +399,41 @@
         function renderEntry(entry) {
             lastParsed = entry;
 
-            // Populate left side meta and functions
-            const metaDiv = document.getElementById('json-meta');
-            metaDiv.innerHTML = '';
-            const idP = document.createElement('p');
-            idP.textContent = 'ID: ' + (entry.id || '(none)');
+            // Clear previous meta content
+            document.getElementById('json-meta').innerHTML = '';
+
+            // Populate the new question display area at the bottom
+            const questionDiv = document.getElementById('question-display');
+            questionDiv.innerHTML = ''; // Clear previous question
             const qP = document.createElement('p');
-            qP.textContent = 'Question: ' + (entry.questionText || '');
-            metaDiv.appendChild(idP);
-            metaDiv.appendChild(qP);
+            qP.innerHTML = `<strong>Question:</strong><br>${entry.questionText || ''}`;
+            questionDiv.appendChild(qP);
 
-            document.getElementById('json-content').textContent = JSON.stringify(entry.raw, null, 2);
-
-            renderToolboxView(entry.functions || []);
-
-            // Add a button to submit the question to the chat
             const submitBtn = document.createElement('button');
-            submitBtn.textContent = 'Submit Question';
+            submitBtn.textContent = 'Submit Question to Chat';
             submitBtn.className = 'btn submit-question-btn';
             submitBtn.addEventListener('click', () => {
                 const q = (entry.questionText || '').trim();
                 if (q) {
-                    const queryInput = document.getElementById('query-input');
-                    queryInput.value = q;
+                    document.getElementById('query-input').value = q;
                     document.querySelector('#query-form button[type="submit"]').click();
                 }
             });
-            metaDiv.appendChild(submitBtn);
+            questionDiv.appendChild(submitBtn);
+
+            // Update raw JSON view
+            document.getElementById('json-content').textContent = JSON.stringify(entry.raw, null, 2);
+            // The toolbox is now global and does not need to be re-rendered on entry selection.
         }
 
-        // Build toolbox view (group by toolbox prefix of name)
-        function renderToolboxView(functions){
+        function renderToolboxView(){
+            const functions = [];
+            allEntries.forEach(entry => {
+                (entry.functions || []).forEach(func => {
+                    functions.push({ ...func, entryId: entry.id });
+                });
+            });
+
             const container = document.getElementById('toolbox-view');
             container.innerHTML = '';
             if (!functions || !functions.length){
@@ -400,7 +450,7 @@
                     tool = full.slice(idx+1) || '(unnamed)';
                 }
                 if (!groups[toolbox]) groups[toolbox] = [];
-                groups[toolbox].push({ tool, desc: fn.description || '', params: fn.parameters });
+                groups[toolbox].push({ tool, desc: fn.description || '', params: fn.parameters, entryId: fn.entryId });
             }
 
             const toolboxNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
@@ -408,7 +458,6 @@
                 const items = groups[name];
                 const details = document.createElement('details');
                 details.className = 'toolbox';
-                // Keep closed by default to avoid clutter
                 const summary = document.createElement('summary');
                 summary.innerHTML = `${name} <span class="badge">${items.length}</span>`;
                 details.appendChild(summary);
@@ -417,7 +466,15 @@
                 for (const it of items){
                     const li = document.createElement('li');
                     const d = document.createElement('details'); d.className = 'tool';
-                    const s = document.createElement('summary'); s.textContent = it.tool; d.appendChild(s);
+                    const s = document.createElement('summary'); 
+                    s.textContent = it.tool;
+
+                    const entryIdSpan = document.createElement('span');
+                    entryIdSpan.className = 'tool-entry-id';
+                    entryIdSpan.textContent = it.entryId || '';
+                    s.appendChild(entryIdSpan);
+
+                    d.appendChild(s);
                     if (it.desc){ const desc = document.createElement('div'); desc.className = 'tool-desc'; desc.textContent = it.desc; d.appendChild(desc); }
                     if (it.params){ const pre = document.createElement('pre'); pre.className = 'tool-params'; pre.textContent = JSON.stringify(it.params, null, 2); d.appendChild(pre); }
                     li.appendChild(d);

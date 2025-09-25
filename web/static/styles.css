@@ -123,7 +123,17 @@ details.toolbox[open] > summary::before { content: '\25BE'; }
 ul.tool-list { list-style: none; margin: 0; padding: 6px 10px 10px 10px; }
 ul.tool-list li { margin: 6px 0; }
 details.tool { border: 1px dashed var(--panel-border); border-radius: 6px; background: var(--panel-bg); }
-details.tool > summary { cursor: pointer; padding: 6px 8px; list-style: none; font-weight: 500; }
+details.tool > summary { cursor: pointer; padding: 6px 8px; list-style: none; font-weight: 500; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+.tool-entry-id {
+    font-size: 11px;
+    color: var(--muted-text);
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
 details.tool > summary::-webkit-details-marker { display: none; }
 details.tool > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--muted-text); }
 details.tool[open] > summary::before { content: '\25BE'; }
@@ -132,9 +142,39 @@ details.tool[open] > summary::before { content: '\25BE'; }
 
 #entry-list {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap; /* Changed from wrap */
+    overflow-x: auto;  /* Enable horizontal scroll */
+    padding-bottom: 8px; /* Add space for scrollbar */
     gap: 8px;
     margin-bottom: 12px;
+}
+
+.entry-item-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0px; /* No gap, the buttons will touch */
+}
+
+.entry-btn {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.btn-remove-entry {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-left: none;
+    color: var(--muted-text);
+    cursor: pointer;
+    padding: 8px 10px;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+    line-height: 1.5; /* Match .btn */
+}
+
+.btn-remove-entry:hover {
+    background: #ffdddd;
+    color: #ff6b6b;
 }
 
 .entry-btn {
@@ -154,6 +194,13 @@ details.tool[open] > summary::before { content: '\25BE'; }
     background-color: var(--accent);
     color: var(--accent-contrast);
     border: none;
+}
+
+#question-display {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px;
 }
 
 @media (max-width: 768px) {

@@ -10,6 +10,45 @@ This repository contains a simple Flask web app for experimenting with LLM promp
 
 The “model” response defaults to a placeholder (“please insert an api key for a model”) unless a valid API key and SDK is configured.
 
+## Configuration
+
+To connect to a real model, you'll need to provide an API key. Create a file named `.env` in the root of the project and add your key like this:
+
+```env
+# .env
+# Google API Key
+GOOGLE_API_KEY="<your_api_key>"
+```
+
+The application will load this file automatically. The `.env` file is included in `.gitignore` and should not be committed to version control.
+
+---
+
+## Quick Start (Bash / Zsh)
+
+1) Create and activate a virtual environment (Python 3.10+):
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+2) Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+3) Run the app (either command works):
+
+```bash
+python web/app.py
+# or
+export FLASK_APP="web/app.py"; flask run --debug
+```
+
+Open http://127.0.0.1:5000 in your browser.
+
 ---
 
 ## Quick Start (Windows PowerShell)
@@ -119,9 +158,13 @@ File contents follow this structure:
 
 - Mic button records short audio, sends it to the backend, and the transcription is auto-submitted as the query.
 - Local Whisper (default path in code): requires FFmpeg and the `openai-whisper` Python package.
-  - Install FFmpeg separately (ensure it’s on PATH).
+    - **Install FFmpeg**: FFmpeg must be installed on your system and available in your PATH.
+    - **macOS (using Homebrew):** `brew install ffmpeg`
+    - **Debian/Ubuntu:** `sudo apt update && sudo apt install ffmpeg`
+    - **Windows (using Chocolatey):** `choco install ffmpeg`
   - Install Whisper: `pip install openai-whisper`
-- Gemini STT (alternative): set `STT_BACKEND=gemini` and export `GOOGLE_API_KEY`, plus install the SDK: `pip install google-generativeai`.
+  - Set `STT_BACKEND=whisper_local` in `.env`.
+- Gemini STT (alternative): set `STT_BACKEND=gemini` in `.env` and export `GOOGLE_API_KEY`, plus install the module: `pip install google-generativeai`.
 
 If you don’t need voice, you can ignore the mic button.
 

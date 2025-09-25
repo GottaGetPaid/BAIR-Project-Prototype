@@ -86,6 +86,8 @@ def query():
                     print("No GOOGLE_API_KEY found; returning default message.")
                 if genai is None:
                     print("google-generativeai is not installed; returning default message.")
+            
+            response_text = response_text.strip()
             print(f'Query: {query_text}\nResponse: {response_text}')
             f.write(f'{UPLOAD_FILE_COUNT},"{query_text}","{response_text}"\n')
             return jsonify({"response": response_text}), 200
@@ -124,21 +126,35 @@ def upload_json():
     if file.filename == '': return jsonify({"error": "No selected file"}), 400
     try:
         raw_text = file.read().decode('utf-8')
-        data_obj = json.loads(raw_text)
-        # Handle: either a single object, or a list of objects - take the first
-        entry = data_obj[0] if isinstance(data_obj, list) else data_obj
-        q_text = _extract_question_text(entry.get('question'))
-        functions = entry.get('function') or entry.get('functions') or []
-        parsed = {
-            'id': entry.get('id'),
-            'questionText': q_text,
-            'functions': functions
-        }
-        # Persist last parsed JSON in session storage (in-memory)
+        entries = []
+        if file.filename.endswith('.jsonl'):
+            for line in raw_text.strip().split('\n'):
+                if line.strip():
+                    entries.append(json.loads(line))
+        else:
+            data_obj = json.loads(raw_text)
+            if isinstance(data_obj, list):
+                entries.extend(data_obj)
+            else:
+                entries.append(data_obj)
+
+        parsed_list = []
+        for entry in entries:
+            q_text = _extract_question_text(entry.get('question'))
+            functions = entry.get('function') or entry.get('functions') or []
+            parsed = {
+                'id': entry.get('id'),
+                'questionText': q_text,
+                'functions': functions,
+                'raw': entry
+            }
+            parsed_list.append(parsed)
+
         sid = flask_session.get('ui_sid') or str(uuid.uuid4())
         flask_session['ui_sid'] = sid
-        SESSIONS[f'last_json:{sid}'] = parsed
-        return jsonify({"message": "JSON parsed successfully", "parsed": parsed, "raw": entry}), 200
+        SESSIONS[f'last_json:{sid}'] = parsed_list
+
+        return jsonify({"message": f"{len(parsed_list)} entries parsed successfully", "parsed_list": parsed_list}), 200
     except json.JSONDecodeError as je:
         return jsonify({"error": f"Invalid JSON: {je}"}), 400
     except Exception as e:
@@ -300,7 +316,6 @@ def stt_stop():
     text = ""
     try:
         backend = AppConfig.STT_BACKEND
-        backend = 'whisper_local'
         print(f"STT backend is set to: '{backend}'")
         
         if backend == 'gemini':

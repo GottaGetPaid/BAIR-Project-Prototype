@@ -17,5 +17,5 @@ class AppConfig:
 
     # Speech-to-Text (STT)
     # Options: "gemini" (Google Generative AI), "whisper" (OpenAI Whisper)
-    STT_BACKEND = os.getenv("STT_BACKEND", "gemini").lower()
+    STT_BACKEND = os.getenv("STT_BACKEND", "whisper_local").lower()
 

@@ -4,9 +4,39 @@
     <meta charset="UTF-8">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    
 </head>
 <body>
-    <div class="main-container">
+    <!-- Start Screen -->
+    <section id="start-screen">
+        <div class="top-bar" style="padding: 12px 16px;">
+            <div></div>
+            <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
+        </div>
+        <div class="center-hero">
+            <div>
+                <div class="hero-title">Hello</div>
+                <div class="tool-grid">
+                    <div class="tool-card"><h4>Travel</h4><p>Flights, hotels, itineraries</p></div>
+                    <div class="tool-card"><h4>Science</h4><p>Facts, summaries, lookups</p></div>
+                    <div class="tool-card"><h4>Math</h4><p>Arithmetic, primes, series</p></div>
+                    <div class="tool-card"><h4>Trivia</h4><p>General knowledge Q&A</p></div>
+                </div>
+            </div>
+        </div>
+        <div class="start-input-bar">
+            <div class="start-input">
+                <button id="start-upload-btn" class="icon-btn" title="Upload JSON">📄</button>
+                <input id="start-query-input" placeholder="Ask a question or upload a JSON..." />
+                <button id="start-mic-btn" class="icon-btn" title="Voice input">🎤</button>
+                <button id="start-send-btn" class="send-btn">Send</button>
+                <input id="start-file-input" type="file" accept=".json,.jsonl" class="hidden" />
+            </div>
+        </div>
+    </section>
+
+    <!-- Main App (two panels) -->
+    <div class="main-container hidden" id="main-app">
         <div class="left-panel">
         <div class="top-bar">
             <div>
@@ -21,14 +51,9 @@
             <div id="entry-list"></div>
         </div>
 
-        <div id="question-display" style="margin-top: auto;"></div>
+    <div id="question-display" style="margin-top: auto;"></div>
     <div class="section-title inline-controls"><span>Tools</span></div>
-    <div id="toolbox-view"></div>
-        <div class="section-title inline-controls">
-            <span>Raw JSON</span>
-            <button id="toggle-raw-btn" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px;">Show</button>
-        </div>
-        <pre id="json-content" class="hidden"></pre>
+    <div id="toolbox-view-left"></div>
     </div>
 
     <div id="resizer"></div>
@@ -55,20 +80,47 @@
         </div>
     </div>
 </div>
+
+    <!-- Floating Tools button -->
+    <button id="tools-fab" class="icon-btn" title="Tools & Raw JSON">🧰</button>
+
+    <!-- Modal for Tools & Raw JSON -->
+    <div id="tools-modal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Tools & Raw JSON</div>
+                <button id="tools-modal-close" class="icon-btn" aria-label="Close">✖</button>
+            </div>
+            <div class="section-title">Capabilities</div>
+            <div class="tool-grid" style="margin-bottom:10px;">
+                <div class="tool-card"><h4>Travel</h4><p>Flights, hotels, itineraries</p></div>
+                <div class="tool-card"><h4>Science</h4><p>Facts, summaries, lookups</p></div>
+                <div class="tool-card"><h4>Math</h4><p>Arithmetic, primes, series</p></div>
+                <div class="tool-card"><h4>Trivia</h4><p>General knowledge Q&A</p></div>
+            </div>
+            <div class="section-title inline-controls">
+                <span>Raw JSON</span>
+                <button id="toggle-raw-btn" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px;">Show</button>
+            </div>
+            <pre id="json-content" class="hidden"></pre>
+        </div>
+    </div>
 <script>
     // Theme handling
     (function initTheme(){
         const saved = localStorage.getItem('theme') || 'light';
         if (saved === 'dark') document.documentElement.setAttribute('data-theme','dark');
-        const btn = document.getElementById('theme-toggle');
-        const setIcon = () => { btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'; };
-        setIcon();
-        btn.addEventListener('click', ()=>{
-            const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-            const next = cur === 'dark' ? 'light' : 'dark';
-            document.documentElement.setAttribute('data-theme', next === 'dark' ? 'dark' : '');
-            localStorage.setItem('theme', next);
-            setIcon();
+        const buttons = document.querySelectorAll('#theme-toggle');
+        const setIcon = (btn) => { if (!btn) return; btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙'; };
+        buttons.forEach(setIcon);
+        document.addEventListener('click', (e)=>{
+            if (e.target && e.target.id === 'theme-toggle'){
+                const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+                const next = cur === 'dark' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', next === 'dark' ? 'dark' : '');
+                localStorage.setItem('theme', next);
+                document.querySelectorAll('#theme-toggle').forEach(setIcon);
+            }
         });
     })();
 
@@ -77,15 +129,103 @@
     let sessionStart = new Date().toISOString();
     let lastParsed = null;
     let allEntries = []; // Global store for unique entries
+    let lastRawText = '';
 
-    // Raw JSON toggler
+    // Modal handling and raw JSON toggler (modal)
+    const toolsFab = document.getElementById('tools-fab');
+    const toolsModal = document.getElementById('tools-modal');
+    const toolsModalClose = document.getElementById('tools-modal-close');
     const rawPre = document.getElementById('json-content');
     const rawBtn = document.getElementById('toggle-raw-btn');
+    toolsFab.addEventListener('click', ()=>{ toolsModal.classList.add('show'); });
+    toolsModalClose.addEventListener('click', ()=>{ toolsModal.classList.remove('show'); });
+    toolsModal.addEventListener('click', (e)=>{ if (e.target === toolsModal) toolsModal.classList.remove('show'); });
     rawBtn.addEventListener('click', ()=>{
         const hidden = rawPre.classList.toggle('hidden');
         rawBtn.textContent = hidden ? 'Show' : 'Hide';
     });
 
+    // Transition from start screen to main app
+    const startScreen = document.getElementById('start-screen');
+    const mainApp = document.getElementById('main-app');
+    function transitionToMain(){
+        if (mainApp.classList.contains('hidden')){
+            startScreen.classList.add('fade-out');
+            setTimeout(()=>{ startScreen.style.display = 'none'; mainApp.classList.remove('hidden'); }, 200);
+        }
+    }
+    // Start screen controls (send, mic, upload)
+    const startQueryInput = document.getElementById('start-query-input');
+    const startSendBtn = document.getElementById('start-send-btn');
+    const startMicBtn = document.getElementById('start-mic-btn');
+    const startUploadBtn = document.getElementById('start-upload-btn');
+    const startFileInput = document.getElementById('start-file-input');
+
+    startSendBtn?.addEventListener('click', ()=>{
+        const q = (startQueryInput.value || '').trim(); if (!q) return;
+        transitionToMain();
+        document.getElementById('query-input').value = q;
+        document.querySelector('#query-form button[type="submit"]').click();
+    });
+    startUploadBtn?.addEventListener('click', ()=> startFileInput.click());
+    startFileInput?.addEventListener('change', function(){
+        const file = this.files && this.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev){ lastRawText = ev.target.result || ''; rawPre.textContent = lastRawText; };
+        reader.readAsText(file);
+        const fd = new FormData(); fd.append('file', file);
+        fetch('/upload_json', { method: 'POST', body: fd })
+          .then(r=>r.json()).then(data=>{
+            if (data.error) return alert('JSON parse error: ' + data.error);
+            const entries = data.parsed_list || (data.parsed ? [data.parsed] : []);
+            if (!entries.length) return;
+            entries.forEach(newEntry => {
+                if (newEntry.id && !allEntries.some(existing => existing.id === newEntry.id)) {
+                    allEntries.push(newEntry);
+                }
+            });
+            renderEntryList();
+            renderToolboxView();
+            transitionToMain();
+            // Auto-submit first entry
+            const first = allEntries[0];
+            if (first && first.questionText){
+                document.getElementById('query-input').value = first.questionText;
+                document.querySelector('#query-form button[type="submit"]').click();
+                renderEntry(first);
+            }
+          }).catch(err=> alert('Error during backend JSON upload: ' + err));
+    });
+
+    // Start screen mic uses same STT pipeline
+    startMicBtn?.addEventListener('click', async ()=>{
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mimeType = chooseAudioMime();
+            mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+            const res = await fetch('/stt/start', { method: 'POST' });
+            const data0 = await res.json(); if (!res.ok || !data0.stt_sid) throw new Error(data0.error || 'Failed to start STT session');
+            sttSid = data0.stt_sid; isRecording = true; startMicBtn.classList.add('recording');
+            mediaRecorder.addEventListener('dataavailable', async (e) => {
+                if (e.data && e.data.size > 0 && isRecording) {
+                    const fd = new FormData();
+                    const ext = extForMime(mediaRecorder.mimeType);
+                    const file = new File([e.data], `chunk_${Date.now()}.${ext}`, { type: mediaRecorder.mimeType });
+                    fd.append('audio', file);
+                    try { await fetch('/stt/chunk', { method: 'POST', body: fd }); } catch {}
+                }
+            });
+            mediaRecorder.start(2000);
+            const stopHandler = async ()=>{
+                startMicBtn.removeEventListener('click', stopHandler);
+                if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+                isRecording = false; mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t=>t.stop());
+                startMicBtn.classList.remove('recording');
+                try { const res2 = await fetch('/stt/stop', { method: 'POST' }); const data = await res2.json(); if (data.text) { startQueryInput.value = data.text; startSendBtn.click(); } } catch {}
+            };
+            startMicBtn.addEventListener('click', stopHandler);
+        } catch (err) { alert('Unable to access microphone: ' + err.message); }
+    });
     // Voice input via MediaRecorder -> chunked upload -> STT backend
     let mediaRecorder = null;
     let isRecording = false;
@@ -195,11 +335,11 @@
                 return;
             }
 
-            //display raw json
+            //display raw json (modal)
             const reader = new FileReader();
             reader.onload = function(event) {
-                const rawText = event.target.result;
-                document.getElementById('json-content').textContent = rawText;
+                const rawText = event.target.result; lastRawText = rawText || '';
+                rawPre.textContent = rawText;
             };
             reader.onerror = function(event) {
                 alert("Error reading: " + event.target.error.name);
@@ -222,7 +362,7 @@
                     return;
                 }
                 console.log(data.message);
-                const entries = data.parsed_list || [];
+                const entries = data.parsed_list || (data.parsed ? [data.parsed] : []);
                 if (!entries.length) return;
 
                 // Merge new entries, ensuring no duplicates based on ID
@@ -235,7 +375,7 @@
                 });
 
                 renderEntryList();
-                renderToolboxView(); // Render the unified toolbox
+                renderToolboxView(); // Render tools to the left panel
 
                 // If this is the first upload or new entries were added,
                 // render the details of the first overall entry.
@@ -343,12 +483,12 @@
                     e.stopPropagation(); // Prevent the main button click
                     allEntries = allEntries.filter(e => e.id !== entry.id);
                     renderEntryList();
-                    renderToolboxView(); // Re-render the unified toolbox
+                    renderToolboxView(); // Re-render tools in left panel
                     // Optional: Clear the view if the active entry was removed
                     if (lastParsed && lastParsed.id === entry.id) {
                         document.getElementById('json-meta').innerHTML = '';
                         document.getElementById('question-display').innerHTML = '';
-                        document.getElementById('json-content').textContent = '';
+                        rawPre.textContent = '';
                         lastParsed = null;
                     }
                 });
@@ -421,8 +561,8 @@
             });
             questionDiv.appendChild(submitBtn);
 
-            // Update raw JSON view
-            document.getElementById('json-content').textContent = JSON.stringify(entry.raw, null, 2);
+            // Update raw JSON view in modal if raw present
+            if (entry.raw) { rawPre.textContent = JSON.stringify(entry.raw, null, 2); }
             // The toolbox is now global and does not need to be re-rendered on entry selection.
         }
 
@@ -434,7 +574,7 @@
                 });
             });
 
-            const container = document.getElementById('toolbox-view');
+            const container = document.getElementById('toolbox-view-left');
             container.innerHTML = '';
             if (!functions || !functions.length){
                 const p = document.createElement('p'); p.className = 'subtle'; p.textContent = 'No tools found in JSON.'; container.appendChild(p); return;

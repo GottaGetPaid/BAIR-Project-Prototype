@@ -226,20 +226,169 @@
             startMicBtn.addEventListener('click', stopHandler);
         } catch (err) { alert('Unable to access microphone: ' + err.message); }
     });
-    // Voice input via MediaRecorder -> chunked upload -> STT backend
-    let mediaRecorder = null;
-    let isRecording = false;
-    let sttSid = null;
-
+    // --- Voice Input: Conditional logic for STT backend ---
+    const sttBackend = '{{ stt_backend }}';
     const micBtn = document.getElementById('mic-btn');
     const queryInput = document.getElementById('query-input');
     const sendBtn = document.querySelector('#query-form button[type="submit"]');
 
+    let isRecording = false;
+
+    // --- Logic for Deepgram Streaming STT ---
+    let socket;
+    let microphone;
+    let processor;
+
+    async function startDeepgramStreaming() {
+        isRecording = true;
+        micBtn.classList.add('recording');
+        queryInput.placeholder = "🎤 Starting real-time conversation... Speak naturally!";
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            microphone = stream;
+
+            const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/stt/deepgram';
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = async () => {
+                console.log('WebSocket connected for Deepgram streaming.');
+                try {
+                    // Use MediaRecorder with a more compatible format
+                    let mimeType = 'audio/webm;codecs=opus';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'audio/webm';
+                    }
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'audio/ogg;codecs=opus';
+                    }
+                    
+                    const mediaRecorder = new MediaRecorder(microphone, { 
+                        mimeType: mimeType,
+                        audioBitsPerSecond: 16000 
+                    });
+                    
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                            console.log('Sending audio chunk, size:', event.data.size);
+                            socket.send(event.data);
+                        }
+                    };
+                    
+                    mediaRecorder.onerror = (event) => {
+                        console.error('MediaRecorder error:', event.error);
+                    };
+                    
+                    mediaRecorder.start(250); // Send chunks every 250ms for better stability and less load
+                    processor = mediaRecorder; // Store reference for cleanup
+                    
+                } catch (error) {
+                    console.error('Error setting up MediaRecorder:', error);
+                    socket.close();
+                }
+            };
+
+            socket.onmessage = (event) => {
+                console.log('Received WebSocket message:', event.data);
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.transcript) {
+                        // Real-time transcript updates
+                        queryInput.value = data.transcript;
+                        
+                        // Visual feedback for interim vs final results
+                        if (data.interim) {
+                            queryInput.style.fontStyle = 'italic';
+                            queryInput.style.opacity = '0.8';
+                        } else {
+                            queryInput.style.fontStyle = 'normal';
+                            queryInput.style.opacity = '1';
+                            
+                            // When speech is final, add it as a user message
+                            if (data.transcript.trim()) {
+                                const conversation = document.getElementById('query-conversation');
+                                const userMessage = document.createElement('div');
+                                userMessage.className = 'message-user';
+                                userMessage.textContent = data.transcript;
+                                conversation.appendChild(userMessage);
+                                conversation.scrollTop = conversation.scrollHeight;
+                            }
+                        }
+                        
+                        console.log('Real-time transcript:', data.transcript, data.interim ? '(interim)' : '(final)');
+                        
+                    } else if (data.llm_response) {
+                        // LLM interjected with a response
+                        console.log('LLM interjection:', data.llm_response);
+                        
+                        // Add LLM response to conversation using existing CSS classes
+                        const conversation = document.getElementById('query-conversation');
+                        const botMessage = document.createElement('div');
+                        botMessage.className = 'message-bot';
+                        botMessage.textContent = data.llm_response;
+                        conversation.appendChild(botMessage);
+                        conversation.scrollTop = conversation.scrollHeight;
+                        
+                        // Clear the input to continue listening for new speech
+                        queryInput.value = '';
+                        queryInput.placeholder = '🎤 Continue speaking... AI is listening';
+                        
+                    } else if (data.error) {
+                        console.error('WebSocket error:', data.error);
+                        alert('Streaming error: ' + data.error);
+                    } else if (data.status) {
+                        console.log('WebSocket status:', data.message);
+                        queryInput.placeholder = '🎤 Real-time conversation active - speak naturally!';
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+
+            socket.onclose = (event) => {
+                console.log('WebSocket closed:', event.code, event.reason);
+                if (isRecording) {
+                    console.log('WebSocket closed unexpectedly during recording');
+                    // Don't auto-reconnect, let user restart manually
+                }
+            };
+            socket.onerror = (err) => {
+                console.error('WebSocket error:', err);
+                if (isRecording) {
+                    console.log('WebSocket error during recording, stopping...');
+                    stopDeepgramStreaming();
+                }
+            };
+
+        } catch (err) {
+            console.error('Mic/WebSocket error:', err);
+            alert('Unable to access microphone or connect to streaming service: ' + err.message);
+            await stopDeepgramStreaming(); // Cleanup on error
+        }
+    }
+
+    async function stopDeepgramStreaming() {
+        if (socket) socket.close();
+        if (processor && processor.stop) processor.stop(); // Stop MediaRecorder
+        if (microphone) microphone.getTracks().forEach(track => track.stop());
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        queryInput.placeholder = "Enter your query or use the mic...";
+        
+        // End the conversation session
+        console.log('Ending real-time conversation session');
+        queryInput.placeholder = "Real-time conversation ended. Click mic to start again.";
+        
+        socket = microphone = processor = null;
+    }
+
+    // --- Logic for chunked recording (Whisper/Gemini) ---
+    let mediaRecorder = null;
+    let sttSid = null;
+
     function chooseAudioMime() {
-        const options = [
-            'audio/webm;codecs=opus', 'audio/webm',
-            'audio/ogg;codecs=opus', 'audio/ogg'
-        ];
+        const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
         for (const t of options) {
             if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
         }
@@ -260,9 +409,7 @@
             
             const res = await fetch('/stt/start', { method: 'POST' });
             const data0 = await res.json();
-            if (!res.ok || !data0.stt_sid) {
-                throw new Error(data0.error || 'Failed to start STT session');
-            }
+            if (!res.ok || !data0.stt_sid) throw new Error(data0.error || 'Failed to start STT session');
             sttSid = data0.stt_sid;
             if (sendBtn) sendBtn.disabled = true;
 
@@ -272,14 +419,11 @@
                     const ext = extForMime(mediaRecorder.mimeType);
                     const file = new File([e.data], `chunk_${Date.now()}.${ext}`, { type: mediaRecorder.mimeType });
                     fd.append('audio', file);
-                    try {
-                        // Just send the chunk, don't expect a transcription back
-                        await fetch('/stt/chunk', { method: 'POST', body: fd });
-                    } catch (err) { console.error('Chunk upload failed', err); }
+                    try { await fetch('/stt/chunk', { method: 'POST', body: fd }); } catch (err) { console.error('Chunk upload failed', err); }
                 }
             });
 
-            mediaRecorder.start(2000); // Send a chunk every 2 seconds
+            mediaRecorder.start(2000);
             isRecording = true;
             micBtn.classList.add('recording');
             queryInput.placeholder = "Recording... Click mic to stop.";
@@ -291,7 +435,6 @@
 
     async function stopRecording() {
         if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
-
         isRecording = false;
         mediaRecorder.stop();
         mediaRecorder.stream.getTracks().forEach(t => t.stop());
@@ -304,7 +447,7 @@
             const data = await res.json();
             if (data.text) {
                 queryInput.value = data.text;
-                sendBtn.click(); // Automatically submit the form
+                sendBtn.click();
             } else if (data.error) {
                 console.error('STT error:', data.error);
                 alert('Transcription failed: ' + data.error);
@@ -319,8 +462,13 @@
         }
     }
 
+    // Main mic button event listener
     micBtn?.addEventListener('click', async () => {
-        if (!isRecording) await startRecording(); else await stopRecording();
+        if (sttBackend === 'deepgram_streaming') {
+            if (isRecording) await stopDeepgramStreaming(); else await startDeepgramStreaming();
+        } else {
+            if (isRecording) await stopRecording(); else await startRecording();
+        }
     });
 
  

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from flask import Flask, render_template, request, redirect, url_for, session as flask_session, jsonify
+from flask_sock import Sock
 import uuid
 
 import sys
@@ -11,6 +12,13 @@ try:
 except ImportError:
     genai = None  # Allow app to run without the package; endpoints will fallback
 from huggingface_hub import InferenceClient
+try:
+    import asyncio
+    import websockets
+    import json as json_lib
+    deepgram_available = True
+except ImportError:
+    deepgram_available = False
 import openai
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -26,9 +34,26 @@ from config import AppConfig
 
 app = Flask(__name__)
 app.secret_key = AppConfig.SECRET_KEY
+sock = Sock(app)
 
 # In-memory store for demo purposes
 SESSIONS = {}
+
+# Global Whisper model (load once at startup)
+WHISPER_MODEL = None
+
+def get_whisper_model():
+    global WHISPER_MODEL
+    if WHISPER_MODEL is None:
+        try:
+            import whisper
+            print("Loading Whisper model (one-time setup)...")
+            WHISPER_MODEL = whisper.load_model("tiny")
+            print("Whisper model loaded successfully!")
+        except ImportError:
+            print("Whisper not available")
+            WHISPER_MODEL = False
+    return WHISPER_MODEL if WHISPER_MODEL is not False else None
 
 # Setup folders
 UPLOAD_FOLDER = 'uploaded_files'
@@ -44,7 +69,7 @@ UPLOAD_FILE_COUNT = len(os.listdir(UPLOAD_FOLDER))
 
 @app.route("/")
 def index():
-    return render_template("upload.html")
+    return render_template("upload.html", stt_backend=AppConfig.STT_BACKEND)
 
 # Your existing /upload and /query routes are fine...
 @app.route('/upload', methods=['POST'])
@@ -394,5 +419,204 @@ def stt_stop():
                 try: os.remove(p)
                 except Exception: pass
 
+# ----------------------------
+# Deepgram STT (Live) route
+# ----------------------------
+
+class ConversationManager:
+    def __init__(self):
+        self.transcript = ""
+        self.last_speech_time = time.time()
+        self.silence_threshold = 2.0  # seconds of silence before considering interjection
+        self.conversation_context = []
+        
+    def should_interject(self, transcript_text, is_final):
+        """Determine if the LLM should interject based on speech patterns"""
+        current_time = time.time()
+        
+        # Update last speech time if we got new content
+        if transcript_text.strip():
+            self.last_speech_time = current_time
+            
+        # Check for natural pause points
+        silence_duration = current_time - self.last_speech_time
+        
+        # Interject if:
+        # 1. There's been silence for threshold duration AND we have content
+        # 2. User asked a direct question
+        # 3. User said something that seems to expect a response
+        
+        if silence_duration > self.silence_threshold and self.transcript.strip():
+            return True
+            
+        if is_final and transcript_text.strip():
+            # Check for question patterns
+            question_indicators = ['?', 'what do you think', 'right?', 'you know?', 'can you', 'would you', 'should i']
+            text_lower = transcript_text.lower()
+            if any(indicator in text_lower for indicator in question_indicators):
+                return True
+                
+        return False
+    
+    async def get_llm_response(self, transcript):
+        """Get response from the configured LLM"""
+        try:
+            backend = AppConfig.MODEL_BACKEND
+            
+            if backend == 'huggingface':
+                hf_token = AppConfig.HUGGING_FACE_API_TOKEN
+                if hf_token and AppConfig.HF_MODEL_ID:
+                    client = InferenceClient(token=hf_token)
+                    response = client.chat_completion(
+                        messages=[
+                            {"role": "system", "content": "You are having a natural conversation. Respond naturally and briefly to what the user just said. Keep responses conversational and under 2 sentences."},
+                            {"role": "user", "content": transcript}
+                        ],
+                        model=AppConfig.HF_MODEL_ID,
+                        max_tokens=100,
+                        temperature=AppConfig.HF_TEMPERATURE or None,
+                    )
+                    if response.choices:
+                        return response.choices[0].message.content
+                        
+            elif backend == 'gemini':
+                api_key = os.environ.get("GOOGLE_API_KEY") if genai else None
+                if api_key and genai is not None:
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                    response = model.generate_content(f"Respond naturally and briefly to: {transcript}")
+                    return getattr(response, 'text', None)
+                    
+        except Exception as e:
+            print(f"LLM response error: {e}")
+            
+        return None
+
+@sock.route('/stt/deepgram')
+def stt_deepgram(ws):
+    if not AppConfig.DEEPGRAM_API_KEY:
+        print("No DEEPGRAM_API_KEY found; closing WebSocket.")
+        ws.send(json.dumps({"error": "Deepgram not configured"}))
+        return
+        
+    print("Deepgram streaming WebSocket connected")
+    conversation = ConversationManager()
+    
+    # Create a thread to handle the Deepgram connection
+    import threading
+    
+    def deepgram_handler():
+        try:
+            # Connect to Deepgram's streaming API
+            deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&endpointing=300"
+            
+            import websocket
+            
+            def on_message(ws_dg, message):
+                try:
+                    data = json.loads(message)
+                    if 'channel' in data:
+                        transcript = data['channel']['alternatives'][0]['transcript']
+                        is_final = data.get('is_final', False)
+                        
+                        if transcript:
+                            # Update conversation transcript
+                            if is_final:
+                                if conversation.transcript:
+                                    conversation.transcript += " " + transcript
+                                else:
+                                    conversation.transcript = transcript
+                            
+                            # Send transcript to client
+                            ws.send(json.dumps({
+                                "transcript": conversation.transcript + (" " + transcript if not is_final else ""),
+                                "is_final": is_final,
+                                "interim": not is_final
+                            }))
+                            
+                            # Check if LLM should interject
+                            if conversation.should_interject(transcript, is_final):
+                                print(f"LLM interjecting based on: '{conversation.transcript}'")
+                                
+                                # Get LLM response in a separate thread to avoid blocking
+                                def get_response():
+                                    import asyncio
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    response = loop.run_until_complete(conversation.get_llm_response(conversation.transcript))
+                                    if response:
+                                        ws.send(json.dumps({
+                                            "llm_response": response,
+                                            "type": "interjection"
+                                        }))
+                                        # Reset transcript after response
+                                        conversation.transcript = ""
+                                    loop.close()
+                                
+                                threading.Thread(target=get_response, daemon=True).start()
+                                
+                except Exception as e:
+                    print(f"Deepgram message error: {e}")
+            
+            def on_error(ws_dg, error):
+                print(f"Deepgram WebSocket error: {error}")
+            
+            def on_close(ws_dg, close_status_code, close_msg):
+                print("Deepgram WebSocket closed")
+            
+            def on_open(ws_dg):
+                print("Connected to Deepgram")
+                ws.send(json.dumps({"status": "connected", "message": "Real-time transcription with AI interjection ready"}))
+            
+            # Create Deepgram WebSocket connection
+            deepgram_ws = websocket.WebSocketApp(
+                deepgram_url,
+                header={"Authorization": f"Token {AppConfig.DEEPGRAM_API_KEY}"},
+                on_open=on_open,
+                on_message=on_message,
+                on_error=on_error,
+                on_close=on_close
+            )
+            
+            # Forward audio from client to Deepgram
+            def forward_audio():
+                try:
+                    while True:
+                        data = ws.receive()
+                        if data and deepgram_ws.sock and deepgram_ws.sock.connected:
+                            deepgram_ws.send(data, websocket.ABNF.OPCODE_BINARY)
+                        else:
+                            break
+                except Exception as e:
+                    print(f"Audio forwarding error: {e}")
+                finally:
+                    deepgram_ws.close()
+            
+            # Start audio forwarding in a separate thread
+            audio_thread = threading.Thread(target=forward_audio, daemon=True)
+            audio_thread.start()
+            
+            # Run Deepgram WebSocket
+            deepgram_ws.run_forever()
+            
+        except Exception as e:
+            print(f"Deepgram handler error: {e}")
+            ws.send(json.dumps({"error": str(e)}))
+    
+    # Start Deepgram handler in a separate thread
+    dg_thread = threading.Thread(target=deepgram_handler, daemon=True)
+    dg_thread.start()
+    
+    # Keep the main WebSocket alive
+    try:
+        dg_thread.join()
+    except Exception as e:
+        print(f"Main WebSocket error: {e}")
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Note: `app.run` is not compatible with Flask-Sock
+    # Use a production WSGI server like Gunicorn or uWSGI instead.
+    # For development, you can use the werkzeug development server directly.
+    from werkzeug.serving import run_simple
+    run_simple('127.0.0.1', 5001, app, use_debugger=True, use_reloader=True)

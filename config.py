@@ -11,6 +11,7 @@ class AppConfig:
     HF_DEVICE = os.getenv("HF_DEVICE", "cpu")
     HF_MAX_NEW_TOKENS = int(os.getenv("HF_MAX_NEW_TOKENS", "128"))
     HF_TEMPERATURE = float(os.getenv("HF_TEMPERATURE", "0.7"))
+    HUGGING_FACE_API_TOKEN = os.getenv("HUGGING_FACE_API_TOKEN")
 
     # Flask
     SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-secret")

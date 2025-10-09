@@ -12,15 +12,33 @@ The “model” response defaults to a placeholder (“please insert an api key 
 
 ## Configuration
 
-To connect to a real model, you'll need to provide an API key. Create a file named `.env` in the root of the project and add your key like this:
+The app is configured via a `.env` file in the project root. Create this file by copying `.env.example` and filling in the values.
 
 ```env
 # .env
-# Google API Key
-GOOGLE_API_KEY="<your_api_key>"
+
+# Model backend: noop | huggingface | gemini
+MODEL_BACKEND=huggingface
+
+# --- Hugging Face --- 
+# Model ID from the Hub (e.g., meta-llama/Meta-Llama-3-8B-Instruct)
+HF_MODEL_ID=meta-llama/Meta-Llama-3-8B-Instruct
+# Your Hugging Face API Token
+HUGGING_FACE_API_TOKEN="your-hf-key"
+
+# --- Google --- 
+# Your Google API Key for Gemini
+GOOGLE_API_KEY="your-google-key"
+
+# --- STT Backend --- 
+# Options: whisper_local | gemini | whisper
+STT_BACKEND=whisper_local
+
+# --- Flask --- 
+FLASK_SECRET_KEY=dev-secret
 ```
 
-The application will load this file automatically. The `.env` file is included in `.gitignore` and should not be committed to version control.
+The `.env` file is included in `.gitignore` and should not be committed to version control.
 
 ---
 
@@ -101,7 +119,7 @@ Sample JSON
 - Example tool naming: `math_toolkit.sum_of_multiples` where `math_toolkit` is the toolbox and `sum_of_multiples` is the tool.
 
 Model response
-- If no `GOOGLE_API_KEY` is present or the `google-generativeai` package is not installed, the backend will return a default response: "please insert an api key for a model".
+- If the selected `MODEL_BACKEND` is not configured correctly (e.g., missing API key), the app will return a default message.
 
 ---
 
@@ -172,15 +190,10 @@ If you don’t need voice, you can ignore the mic button.
 
 ## Optional: Configure a real model
 
-By default, the app returns a placeholder message. To use Gemini for text responses:
+By default, the `MODEL_BACKEND` is set to `noop`. To use a real model, set the `MODEL_BACKEND` in your `.env` file to one of the following:
 
-```powershell
-# In PowerShell (current session)
-$env:GOOGLE_API_KEY = "<your_api_key>"
-pip install google-generativeai
-```
-
-Rerun the app. The `/query` endpoint will call `gemini-1.5-flash-latest` when the key and package are available.
+- **`gemini`**: Uses the Gemini 1.5 Flash model. Requires `GOOGLE_API_KEY` to be set.
+- **`huggingface`**: Uses the Hugging Face Inference API. Requires `HUGGING_FACE_API_TOKEN` and a `HF_MODEL_ID` to be set.
 
 ---
 

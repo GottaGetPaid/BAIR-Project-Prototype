@@ -10,6 +10,7 @@ try:
     import google.generativeai as genai
 except ImportError:
     genai = None  # Allow app to run without the package; endpoints will fallback
+from huggingface_hub import InferenceClient
 import openai
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -66,12 +67,15 @@ def upload():
 def query():
     query_text = request.form.get('query', '').strip()
     if not query_text: return jsonify({"error": "No query provided"}), 400
+
+    backend = AppConfig.MODEL_BACKEND
+    default_msg = "Model backend not configured or API key is missing."
+    response_text = default_msg
+
     try:
-        with open(os.path.join(QUERIES_FOLDER, 'queries.csv'), 'a', encoding='utf-8') as f:
+        if backend == 'gemini':
             print("Sending query to Gemini 1.5 Flash model...")
             api_key = os.environ.get("GOOGLE_API_KEY") if genai else None
-            default_msg = "please insert an api key for a model"
-            response_text = default_msg
             if api_key and genai is not None:
                 try:
                     genai.configure(api_key=api_key)
@@ -82,16 +86,46 @@ def query():
                     print(f"Model error: {model_err}")
                     response_text = default_msg
             else:
-                if not api_key:
-                    print("No GOOGLE_API_KEY found; returning default message.")
-                if genai is None:
-                    print("google-generativeai is not installed; returning default message.")
-            
-            response_text = response_text.strip()
-            print(f'Query: {query_text}\nResponse: {response_text}')
+                if not api_key: print("No GOOGLE_API_KEY found; returning default message.")
+                if genai is None: print("google-generativeai is not installed; returning default message.")
+
+        elif backend == 'huggingface':
+            print(f"Sending query to Hugging Face model: {AppConfig.HF_MODEL_ID}...")
+            hf_token = AppConfig.HUGGING_FACE_API_TOKEN
+            if hf_token and AppConfig.HF_MODEL_ID:
+                try:
+                    client = InferenceClient(token=hf_token)
+                    response = client.chat_completion(
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": f"Respond to this in exactly 1 sentence: {query_text}"
+                            }
+                        ],
+                        model=AppConfig.HF_MODEL_ID,
+                        max_tokens=AppConfig.HF_MAX_NEW_TOKENS,
+                        temperature=AppConfig.HF_TEMPERATURE or None, # Temp must be > 0, so pass None if 0
+                    )
+                    if response.choices:
+                        response_text = response.choices[0].message.content or default_msg
+                except Exception as model_err:
+                    print(f"Hugging Face model error: {model_err}")
+                    response_text = default_msg
+            else:
+                if not hf_token: print("No HUGGING_FACE_API_TOKEN found; returning default message.")
+                if not AppConfig.HF_MODEL_ID: print("No HF_MODEL_ID found; returning default message.")
+        else:
+            print(f"Model backend is '{backend}'. No action taken.")
+            response_text = "No model backend selected. Please set MODEL_BACKEND in your .env file."
+
+        response_text = response_text.strip()
+        print(f'Query: {query_text}\nResponse: {response_text}')
+        with open(os.path.join(QUERIES_FOLDER, 'queries.csv'), 'a', encoding='utf-8') as f:
             f.write(f'{UPLOAD_FILE_COUNT},"{query_text}","{response_text}"\n')
-            return jsonify({"response": response_text}), 200
-    except Exception as e: return jsonify({"error": str(e)}), 500
+        return jsonify({"response": response_text}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ----------------------------
 # JSON upload/parse route

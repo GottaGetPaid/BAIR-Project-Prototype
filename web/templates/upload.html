@@ -167,6 +167,17 @@
         document.getElementById('query-input').value = q;
         document.querySelector('#query-form button[type="submit"]').click();
     });
+    
+    // Add Enter key support for start screen
+    startQueryInput?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const q = (startQueryInput.value || '').trim(); if (!q) return;
+            transitionToMain();
+            document.getElementById('query-input').value = q;
+            document.querySelector('#query-form button[type="submit"]').click();
+        }
+    });
     startUploadBtn?.addEventListener('click', ()=> startFileInput.click());
     startFileInput?.addEventListener('change', function(){
         const file = this.files && this.files[0]; if (!file) return;
@@ -304,16 +315,7 @@
                         } else {
                             queryInput.style.fontStyle = 'normal';
                             queryInput.style.opacity = '1';
-                            
-                            // When speech is final, add it as a user message
-                            if (data.transcript.trim()) {
-                                const conversation = document.getElementById('query-conversation');
-                                const userMessage = document.createElement('div');
-                                userMessage.className = 'message-user';
-                                userMessage.textContent = data.transcript;
-                                conversation.appendChild(userMessage);
-                                conversation.scrollTop = conversation.scrollHeight;
-                            }
+                            // Don't add user message here - wait for LLM response
                         }
                         
                         console.log('Real-time transcript:', data.transcript, data.interim ? '(interim)' : '(final)');
@@ -322,8 +324,17 @@
                         // LLM interjected with a response
                         console.log('LLM interjection:', data.llm_response);
                         
-                        // Add LLM response to conversation using existing CSS classes
                         const conversation = document.getElementById('query-conversation');
+                        
+                        // First add the user message (the complete transcript that triggered the response)
+                        if (queryInput.value.trim()) {
+                            const userMessage = document.createElement('div');
+                            userMessage.className = 'message-user';
+                            userMessage.textContent = queryInput.value.trim();
+                            conversation.appendChild(userMessage);
+                        }
+                        
+                        // Then add LLM response
                         const botMessage = document.createElement('div');
                         botMessage.className = 'message-bot';
                         botMessage.textContent = data.llm_response;

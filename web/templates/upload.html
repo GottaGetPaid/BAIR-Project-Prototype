@@ -16,12 +16,8 @@
         <div class="center-hero">
             <div>
                 <div class="hero-title">Hello</div>
-                <div class="tool-grid">
-                    <div class="tool-card"><h4>Travel</h4><p>Flights, hotels, itineraries</p></div>
-                    <div class="tool-card"><h4>Science</h4><p>Facts, summaries, lookups</p></div>
-                    <div class="tool-card"><h4>Math</h4><p>Arithmetic, primes, series</p></div>
-                    <div class="tool-card"><h4>Trivia</h4><p>General knowledge Q&A</p></div>
-                </div>
+                <div id="start-tool-grid" class="tool-grid"></div>
+                <div id="start-sample-prompt" class="subtle" style="margin-top:12px; text-align:center;"></div>
             </div>
         </div>
         <div class="start-input-bar">
@@ -50,6 +46,16 @@
             <div class="section-title">JSON Entries</div>
             <div id="entry-list"></div>
         </div>
+
+    <div id="example-prompt-panel" class="hidden" style="margin-top: 8px;">
+        <div class="section-title">Example Prompt</div>
+        <div id="example-prompt-content" class="subtle"></div>
+    </div>
+
+    <div id="suggested-tool-panel" class="hidden" style="margin-top: 8px;">
+        <div class="section-title">Suggested Tool</div>
+        <div id="suggested-tool-content" class="subtle"></div>
+    </div>
 
     <div id="question-display" style="margin-top: auto;"></div>
     <div class="section-title inline-controls"><span>Tools</span></div>
@@ -130,6 +136,9 @@
     let lastParsed = null;
     let allEntries = []; // Global store for unique entries
     let lastRawText = '';
+    let functionIndex = []; // flattened functions with vectors for similarity
+    let currentSamplePrompt = '';
+    let lastUserQueryText = '';
 
     // Modal handling and raw JSON toggler (modal)
     const toolsFab = document.getElementById('tools-fab');
@@ -154,6 +163,51 @@
             setTimeout(()=>{ startScreen.style.display = 'none'; mainApp.classList.remove('hidden'); }, 200);
         }
     }
+    // --- Start screen topics and sample prompt ---
+    const ALL_TOPICS = [
+        { title: 'Travel', desc: 'Flights, hotels, itineraries' },
+        { title: 'Science', desc: 'Facts, summaries, lookups' },
+        { title: 'Math', desc: 'Arithmetic, primes, series' },
+        { title: 'Trivia', desc: 'General knowledge Q&A' },
+        { title: 'Shopping', desc: 'Compare prices, find deals' },
+        { title: 'Coding', desc: 'APIs, debugging, snippets' },
+        { title: 'Health', desc: 'Wellness info, nutrition' },
+        { title: 'Finance', desc: 'Budgets, markets, taxes' },
+        { title: 'News', desc: 'Headlines, summaries' },
+        { title: 'Education', desc: 'Study help, quizzes' },
+        { title: 'Sports', desc: 'Scores, schedules, stats' },
+        { title: 'Weather', desc: 'Forecasts and advisories' }
+    ];
+    const SAMPLE_PROMPTS = [
+        'Find flights from SFO to NYC next Tuesday under $300 and a 2-night hotel near Times Square.',
+        'Summarize the key differences between mitosis and meiosis with examples.',
+        'Write a function to compute the nth Fibonacci number and show the first 10.',
+        'What is the capital of Brazil and two facts about it?',
+        'Compare the MacBook Air M2 vs. Dell XPS 13 for programming and battery life.'
+    ];
+    function pickRandom(arr, n){
+        const a = arr.slice();
+        for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+        return a.slice(0, n);
+    }
+    function renderStartTopics(){
+        const grid = document.getElementById('start-tool-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        pickRandom(ALL_TOPICS, 4).forEach(t => {
+            const card = document.createElement('div');
+            card.className = 'tool-card';
+            const h4 = document.createElement('h4'); h4.textContent = t.title;
+            const p = document.createElement('p'); p.textContent = t.desc;
+            card.appendChild(h4); card.appendChild(p);
+            grid.appendChild(card);
+        });
+        currentSamplePrompt = pickRandom(SAMPLE_PROMPTS, 1)[0] || '';
+        const sampleEl = document.getElementById('start-sample-prompt');
+        if (sampleEl) sampleEl.textContent = currentSamplePrompt ? `Try: “${currentSamplePrompt}”` : '';
+    }
+    // Render at load
+    renderStartTopics();
     // Start screen controls (send, mic, upload)
     const startQueryInput = document.getElementById('start-query-input');
     const startSendBtn = document.getElementById('start-send-btn');
@@ -166,6 +220,8 @@
         transitionToMain();
         document.getElementById('query-input').value = q;
         document.querySelector('#query-form button[type="submit"]').click();
+        // Show example prompt on left after sending
+        ensureExamplePromptRendered();
     });
     
     // Add Enter key support for start screen
@@ -176,6 +232,7 @@
             transitionToMain();
             document.getElementById('query-input').value = q;
             document.querySelector('#query-form button[type="submit"]').click();
+            ensureExamplePromptRendered();
         }
     });
     startUploadBtn?.addEventListener('click', ()=> startFileInput.click());
@@ -204,6 +261,7 @@
                 document.getElementById('query-input').value = first.questionText;
                 document.querySelector('#query-form button[type="submit"]').click();
                 renderEntry(first);
+                ensureExamplePromptRendered();
             }
           }).catch(err=> alert('Error during backend JSON upload: ' + err));
     });
@@ -543,6 +601,7 @@
                     // Highlight the first entry button as active
                     const firstBtn = document.querySelector('.entry-btn');
                     if(firstBtn) firstBtn.classList.add('active');
+                    ensureExamplePromptRendered();
                 }
             })
             .catch(error => {
@@ -556,6 +615,7 @@
             const queryInput = document.getElementById('query-input');
             const query = queryInput.value.trim();
             if (!query) return;
+            lastUserQueryText = query;
 
             // Display user message
             const conversation = document.getElementById('query-conversation');
@@ -576,6 +636,10 @@
 
             // Clear input
             queryInput.value = '';
+
+            // Update example prompt and suggested tool
+            ensureExamplePromptRendered();
+            showSuggestedTool(lastUserQueryText);
 
             //send query to backend
             const queryData = new FormData();
@@ -733,13 +797,8 @@
                 });
             });
 
-            const container = document.getElementById('toolbox-view-left');
-            container.innerHTML = '';
-            if (!functions || !functions.length){
-                const p = document.createElement('p'); p.className = 'subtle'; p.textContent = 'No tools found in JSON.'; container.appendChild(p); return;
-            }
-            const groups = {};
-            for (const fn of functions){
+            // Build function index with vectors for similarity
+            functionIndex = functions.map(fn => {
                 const full = (fn.name || '').trim();
                 let toolbox = 'misc';
                 let tool = full || '(unnamed)';
@@ -748,8 +807,26 @@
                     toolbox = full.slice(0, idx) || 'misc';
                     tool = full.slice(idx+1) || '(unnamed)';
                 }
-                if (!groups[toolbox]) groups[toolbox] = [];
-                groups[toolbox].push({ tool, desc: fn.description || '', params: fn.parameters, entryId: fn.entryId });
+                const paramNames = [];
+                try {
+                    const params = fn.parameters || {};
+                    if (params && params.properties) {
+                        for (const k of Object.keys(params.properties)) paramNames.push(k);
+                    }
+                } catch {}
+                const text = [full, fn.description || '', paramNames.join(' ')].join(' ').toLowerCase();
+                return { fullName: full, toolbox, tool, desc: fn.description || '', params: fn.parameters, entryId: fn.entryId, vector: trigramVector(text) };
+            });
+
+            const container = document.getElementById('toolbox-view-left');
+            container.innerHTML = '';
+            if (!functions || !functions.length){
+                const p = document.createElement('p'); p.className = 'subtle'; p.textContent = 'No tools found in JSON.'; container.appendChild(p); return;
+            }
+            const groups = {};
+            for (const fi of functionIndex){
+                if (!groups[fi.toolbox]) groups[fi.toolbox] = [];
+                groups[fi.toolbox].push({ tool: fi.tool, desc: fi.desc, params: fi.params, entryId: fi.entryId });
             }
 
             const toolboxNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
@@ -782,6 +859,53 @@
                 details.appendChild(ul);
                 container.appendChild(details);
             }
+
+            // If we already have a last query, update the suggestion
+            if (lastUserQueryText) showSuggestedTool(lastUserQueryText);
+        }
+
+        // --- Similarity helpers (trigram + cosine) ---
+        function trigramVector(text){
+            const v = new Map();
+            const t = (text || '').toLowerCase();
+            for (let i=0;i<t.length-2;i++){
+                const tri = t.slice(i,i+3);
+                v.set(tri, (v.get(tri)||0)+1);
+            }
+            return v;
+        }
+        function cosineSim(v1, v2){
+            if (!v1 || !v2) return 0;
+            let dot=0, norm1=0, norm2=0;
+            for (const [,w] of v1) norm1 += w*w;
+            for (const [,w] of v2) norm2 += w*w;
+            const smaller = v1.size < v2.size ? v1 : v2;
+            const other = smaller===v1 ? v2 : v1;
+            for (const [k,w] of smaller){ const w2 = other.get(k)||0; if (w2) dot += w*w2; }
+            if (!norm1 || !norm2) return 0;
+            return dot / (Math.sqrt(norm1)*Math.sqrt(norm2));
+        }
+        function showSuggestedTool(queryText){
+            const panel = document.getElementById('suggested-tool-panel');
+            const content = document.getElementById('suggested-tool-content');
+            if (!functionIndex.length){ content.textContent = 'No tools loaded yet.'; panel.classList.remove('hidden'); return; }
+            const qv = trigramVector((queryText||'').toLowerCase());
+            let best = null, bestScore = -1;
+            for (const fi of functionIndex){
+                const s = cosineSim(qv, fi.vector);
+                if (s > bestScore){ bestScore = s; best = fi; }
+            }
+            if (!best){ content.textContent = 'No suggestion available.'; panel.classList.remove('hidden'); return; }
+            content.innerHTML = `<strong>${best.toolbox}.${best.tool}</strong>${best.desc?` — ${best.desc}`:''}<br><span class="subtle">Match: ${(bestScore*100).toFixed(1)}%</span>`;
+            panel.classList.remove('hidden');
+        }
+
+        function ensureExamplePromptRendered(){
+            const p = document.getElementById('example-prompt-panel');
+            const c = document.getElementById('example-prompt-content');
+            if (!currentSamplePrompt){ return; }
+            c.textContent = currentSamplePrompt;
+            p.classList.remove('hidden');
         }
 
         // Draggable resizer

@@ -231,6 +231,43 @@ details.tool[open] > summary::before { content: '\25BE'; }
     padding: 10px;
 }
 
+/* Example prompt callout */
+.example-prompt-callout {
+    background: linear-gradient(180deg, var(--bg), var(--panel-bg));
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+}
+.example-prompt-callout::before {
+    content: 'Suggested prompt';
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted-text);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* Function ideas */
+.function-ideas-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+.function-idea-card {
+    border: 1px solid var(--panel-border);
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 10px;
+}
+.function-idea-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.function-idea-desc { font-size: 12px; color: var(--muted-text); }
+
 @media (max-width: 768px) {
     .main-container {
         flex-direction: column;

@@ -47,9 +47,14 @@
             <div id="entry-list"></div>
         </div>
 
+    <div id="function-ideas-panel" class="hidden" style="margin-top: 8px;">
+        <div class="section-title">Function Ideas</div>
+        <div id="function-ideas-grid" class="function-ideas-grid"></div>
+    </div>
+
     <div id="example-prompt-panel" class="hidden" style="margin-top: 8px;">
         <div class="section-title">Example Prompt</div>
-        <div id="example-prompt-content" class="subtle"></div>
+        <div id="example-prompt-content" class="example-prompt-callout"></div>
     </div>
 
     <div id="suggested-tool-panel" class="hidden" style="margin-top: 8px;">
@@ -815,7 +820,17 @@
                     }
                 } catch {}
                 const text = [full, fn.description || '', paramNames.join(' ')].join(' ').toLowerCase();
-                return { fullName: full, toolbox, tool, desc: fn.description || '', params: fn.parameters, entryId: fn.entryId, vector: trigramVector(text) };
+                return {
+                    fullName: full,
+                    toolbox,
+                    tool,
+                    desc: fn.description || '',
+                    params: fn.parameters,
+                    entryId: fn.entryId,
+                    triVector: trigramVector(text),
+                    wordVector: wordVector(text),
+                    tokens: new Set(text.split(/[^a-z0-9]+/).filter(Boolean))
+                };
             });
 
             const container = document.getElementById('toolbox-view-left');
@@ -862,6 +877,9 @@
 
             // If we already have a last query, update the suggestion
             if (lastUserQueryText) showSuggestedTool(lastUserQueryText);
+
+            // Render function ideas
+            renderFunctionIdeas();
         }
 
         // --- Similarity helpers (trigram + cosine) ---
@@ -872,6 +890,12 @@
                 const tri = t.slice(i,i+3);
                 v.set(tri, (v.get(tri)||0)+1);
             }
+            return v;
+        }
+        function wordVector(text){
+            const v = new Map();
+            const tokens = (text||'').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+            for (const tok of tokens){ v.set(tok, (v.get(tok)||0)+1); }
             return v;
         }
         function cosineSim(v1, v2){
@@ -889,14 +913,27 @@
             const panel = document.getElementById('suggested-tool-panel');
             const content = document.getElementById('suggested-tool-content');
             if (!functionIndex.length){ content.textContent = 'No tools loaded yet.'; panel.classList.remove('hidden'); return; }
-            const qv = trigramVector((queryText||'').toLowerCase());
-            let best = null, bestScore = -1;
+
+            const q = (queryText||'').toLowerCase();
+            const qTri = trigramVector(q);
+            const qWord = wordVector(q);
+            const qTokens = new Set(q.split(/[^a-z0-9]+/).filter(Boolean));
+            let best = null, bestScore = -1, bestParts = {tri:0, word:0, boost:0};
             for (const fi of functionIndex){
-                const s = cosineSim(qv, fi.vector);
-                if (s > bestScore){ bestScore = s; best = fi; }
+                const sTri = cosineSim(qTri, fi.triVector);
+                const sWord = cosineSim(qWord, fi.wordVector);
+                // Boost for shared tokens in toolbox/tool name
+                let boost = 0;
+                for (const tok of qTokens){
+                    if (fi.tokens.has(tok)) boost += 0.02; // small incremental boost
+                    if (tok === fi.toolbox || tok === fi.tool) boost += 0.05;
+                }
+                const s = 0.7*sTri + 0.3*sWord + boost;
+                if (s > bestScore){ bestScore = s; best = fi; bestParts = {tri:sTri, word:sWord, boost}; }
             }
             if (!best){ content.textContent = 'No suggestion available.'; panel.classList.remove('hidden'); return; }
-            content.innerHTML = `<strong>${best.toolbox}.${best.tool}</strong>${best.desc?` — ${best.desc}`:''}<br><span class="subtle">Match: ${(bestScore*100).toFixed(1)}%</span>`;
+            const pct = Math.max(0, Math.min(1, bestScore))*100;
+            content.innerHTML = `<strong>${best.toolbox}.${best.tool}</strong>${best.desc?` — ${best.desc}`:''}<br><span class="subtle">Match: ${pct.toFixed(1)}% (tri:${(bestParts.tri*100).toFixed(0)}% word:${(bestParts.word*100).toFixed(0)}%)</span>`;
             panel.classList.remove('hidden');
         }
 
@@ -906,6 +943,24 @@
             if (!currentSamplePrompt){ return; }
             c.textContent = currentSamplePrompt;
             p.classList.remove('hidden');
+        }
+
+        function renderFunctionIdeas(){
+            const panel = document.getElementById('function-ideas-panel');
+            const grid = document.getElementById('function-ideas-grid');
+            if (!functionIndex.length){ panel.classList.add('hidden'); grid.innerHTML=''; return; }
+            const n = Math.min(functionIndex.length, Math.floor(Math.random()*2)+4); // 4 or 5
+            const picks = pickRandom(functionIndex, n);
+            grid.innerHTML = '';
+            for (const fi of picks){
+                const card = document.createElement('div');
+                card.className = 'function-idea-card';
+                const title = document.createElement('div'); title.className = 'function-idea-title'; title.textContent = `${fi.toolbox}.${fi.tool}`;
+                const desc = document.createElement('div'); desc.className = 'function-idea-desc'; desc.textContent = fi.desc || '';
+                card.appendChild(title); card.appendChild(desc);
+                grid.appendChild(card);
+            }
+            panel.classList.remove('hidden');
         }
 
         // Draggable resizer

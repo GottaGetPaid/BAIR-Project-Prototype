@@ -35,6 +35,17 @@ body {
     overflow: hidden;
 }
 
+/* Disclaimer banner */
+.disclaimer-banner {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    text-align: center;
+    background: #fff3cd; /* soft warning */
+    color: #7a5b00;
+    border-bottom: 1px solid #ffe69c;
+}
+
 /* Transitions */
 .fade-out { animation: fadeOut 260ms ease forwards; }
 .fade-in { animation: fadeIn 260ms ease forwards; }
@@ -236,19 +247,19 @@ details.tool[open] > summary::before { content: '\25BE'; }
     background: linear-gradient(180deg, var(--bg), var(--panel-bg));
     border: 1px solid var(--panel-border);
     border-radius: 10px;
-    padding: 12px;
-    font-size: 14px;
+    padding: 14px 16px; /* add more breathing room */
+    font-size: 16px; /* increased */
     line-height: 1.6;
     color: var(--text);
     box-shadow: 0 1px 0 rgba(0,0,0,0.04);
 }
 .example-prompt-callout::before {
     content: 'Suggested prompt';
-    display: inline-block;
-    font-size: 11px;
+    display: block; /* put on its own line */
+    font-size: 12px; /* slightly larger */
     font-weight: 600;
     color: var(--muted-text);
-    margin-bottom: 6px;
+    margin-bottom: 8px; /* more space below label */
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
@@ -267,6 +278,9 @@ details.tool[open] > summary::before { content: '\25BE'; }
 }
 .function-idea-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
 .function-idea-desc { font-size: 12px; color: var(--muted-text); }
+
+/* Start screen sample prompt size */
+.sample-prompt-text { font-size: 16px; }
 
 @media (max-width: 768px) {
     .main-container {

@@ -282,6 +282,18 @@ details.tool[open] > summary::before { content: '\25BE'; }
 /* Start screen sample prompt size */
 .sample-prompt-text { font-size: 16px; }
 
+/* Example Topics list */
+.example-topics-list { display: grid; gap: 8px; margin-top: 6px; }
+.example-topic-item {
+    border: 1px solid var(--panel-border);
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+.example-topic-item.active { outline: 2px solid var(--accent); outline-offset: 0; }
+.example-topic-title { font-weight: 600; font-size: 13px; }
+.example-topic-desc { font-size: 12px; color: var(--muted-text); }
+
 @media (max-width: 768px) {
     .main-container {
         flex-direction: column;

@@ -67,6 +67,11 @@
     <div id="question-display" style="margin-top: auto;"></div>
     <div class="section-title inline-controls"><span>Tools</span></div>
     <div id="toolbox-view-left"></div>
+
+    <div id="example-topics-panel" class="hidden" style="margin-top: 12px;">
+        <div class="section-title">Example Topics</div>
+        <div id="example-topics-list" class="example-topics-list"></div>
+    </div>
     </div>
 
     <div id="resizer"></div>
@@ -146,6 +151,7 @@
     let functionIndex = []; // flattened functions with vectors for similarity
     let currentSamplePrompt = '';
     let lastUserQueryText = '';
+    let topicIndex = []; // topics with vectors for inference
 
     // Modal handling and raw JSON toggler (modal)
     const toolsFab = document.getElementById('tools-fab');
@@ -215,6 +221,11 @@
     }
     // Render at load
     renderStartTopics();
+        // Load example topics JSON
+        fetch('{{ url_for('static', filename='data/example_functions.json') }}')
+            .then(r=>r.json())
+            .then(data=>{ if (data && data.topics) { buildTopicIndex(data.topics); renderExampleTopics(data.topics); } })
+            .catch(()=>{});
     // Start screen controls (send, mic, upload)
     const startQueryInput = document.getElementById('start-query-input');
     const startSendBtn = document.getElementById('start-send-btn');
@@ -647,6 +658,7 @@
             // Update example prompt and suggested tool
             ensureExamplePromptRendered();
             showSuggestedTool(lastUserQueryText);
+            inferAndHighlightTopic(lastUserQueryText);
 
             //send query to backend
             const queryData = new FormData();
@@ -879,6 +891,7 @@
 
             // If we already have a last query, update the suggestion
             if (lastUserQueryText) showSuggestedTool(lastUserQueryText);
+            if (lastUserQueryText) inferAndHighlightTopic(lastUserQueryText);
 
             // Render function ideas
             renderFunctionIdeas();
@@ -963,6 +976,48 @@
                 grid.appendChild(card);
             }
             panel.classList.remove('hidden');
+        }
+
+        // --- Example Topics ---
+        function buildTopicIndex(topics){
+            topicIndex = topics.map(t => {
+                const text = [t.title, t.description, ...(t.functions||[]).map(f=>`${f.name} ${f.description}`)].join(' ').toLowerCase();
+                return { id: t.id, title: t.title, description: t.description, triVector: trigramVector(text), wordVector: wordVector(text) };
+            });
+        }
+        function renderExampleTopics(topics){
+            const panel = document.getElementById('example-topics-panel');
+            const list = document.getElementById('example-topics-list');
+            if (!topics || !topics.length){ panel.classList.add('hidden'); return; }
+            list.innerHTML = '';
+            for (const t of topics){
+                const item = document.createElement('div');
+                item.className = 'example-topic-item';
+                const title = document.createElement('div'); title.className = 'example-topic-title'; title.textContent = t.title;
+                const desc = document.createElement('div'); desc.className = 'example-topic-desc'; desc.textContent = t.description || '';
+                item.dataset.topicId = t.id;
+                item.appendChild(title); item.appendChild(desc);
+                list.appendChild(item);
+            }
+            panel.classList.remove('hidden');
+        }
+        function inferAndHighlightTopic(query){
+            const list = document.getElementById('example-topics-list');
+            if (!list || !topicIndex.length) return;
+            const q = (query||'').toLowerCase();
+            const qTri = trigramVector(q);
+            const qWord = wordVector(q);
+            let bestId = null, bestScore = -1;
+            for (const t of topicIndex){
+                const s = 0.7*cosineSim(qTri, t.triVector) + 0.3*cosineSim(qWord, t.wordVector);
+                if (s > bestScore){ bestScore = s; bestId = t.id; }
+            }
+            // Clear highlights
+            list.querySelectorAll('.example-topic-item').forEach(el => el.classList.remove('active'));
+            if (bestId){
+                const el = list.querySelector(`.example-topic-item[data-topic-id="${bestId}"]`);
+                if (el) el.classList.add('active');
+            }
         }
 
         // Draggable resizer

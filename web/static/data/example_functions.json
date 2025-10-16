@@ -1,0 +1,112 @@
+{
+  "topics": [
+    {
+      "id": "physics",
+      "title": "Physics",
+      "description": "Classical mechanics, electromagnetism, optics, and modern physics.",
+      "functions": [
+        {"name": "physics.compute_force", "description": "Compute force using F = m * a.", "parameters": {"type": "object", "properties": {"mass": {"type": "number"}, "acceleration": {"type": "number"}}}},
+        {"name": "physics.snells_law", "description": "Calculate refraction angle with Snell's law.", "parameters": {"type": "object", "properties": {"n1": {"type": "number"}, "n2": {"type": "number"}, "theta1": {"type": "number"}}}}
+      ]
+    },
+    {
+      "id": "search",
+      "title": "Search",
+      "description": "Web, document, and site-specific searches.",
+      "functions": [
+        {"name": "search.web", "description": "Search the web for results.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "topK": {"type": "integer"}}}},
+        {"name": "search.site", "description": "Search within a specific site.", "parameters": {"type": "object", "properties": {"site": {"type": "string"}, "query": {"type": "string"}}}}
+      ]
+    },
+    {
+      "id": "trivia",
+      "title": "Trivia",
+      "description": "General knowledge questions and answers.",
+      "functions": [
+        {"name": "trivia.random_fact", "description": "Return a random fact.", "parameters": {"type": "object", "properties": {}}},
+        {"name": "trivia.quiz", "description": "Generate a short trivia quiz.", "parameters": {"type": "object", "properties": {"category": {"type": "string"}, "count": {"type": "integer"}}}}
+      ]
+    },
+    {
+      "id": "math",
+      "title": "Math",
+      "description": "Arithmetic, algebra, geometry, and series.",
+      "functions": [
+        {"name": "math.fibonacci", "description": "Compute nth Fibonacci number.", "parameters": {"type": "object", "properties": {"n": {"type": "integer"}}}},
+        {"name": "math.primes", "description": "List primes up to N.", "parameters": {"type": "object", "properties": {"n": {"type": "integer"}}}}
+      ]
+    },
+    {
+      "id": "weather",
+      "title": "Weather",
+      "description": "Forecasts and conditions.",
+      "functions": [
+        {"name": "weather.forecast", "description": "Get forecast for a city.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}, "days": {"type": "integer"}}}},
+        {"name": "weather.current", "description": "Get current weather.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}
+      ]
+    },
+    {
+      "id": "finance",
+      "title": "Finance",
+      "description": "Budgets, markets, and analysis.",
+      "functions": [
+        {"name": "finance.stock_quote", "description": "Get stock quote.", "parameters": {"type": "object", "properties": {"ticker": {"type": "string"}}}},
+        {"name": "finance.convert_currency", "description": "Convert currency.", "parameters": {"type": "object", "properties": {"amount": {"type": "number"}, "from": {"type": "string"}, "to": {"type": "string"}}}}
+      ]
+    },
+    {
+      "id": "coding",
+      "title": "Coding",
+      "description": "APIs, debugging, and code examples.",
+      "functions": [
+        {"name": "coding.snippet", "description": "Generate code snippet.", "parameters": {"type": "object", "properties": {"language": {"type": "string"}, "task": {"type": "string"}}}},
+        {"name": "coding.explain_error", "description": "Explain an error message.", "parameters": {"type": "object", "properties": {"message": {"type": "string"}}}}
+      ]
+    },
+    {
+      "id": "travel",
+      "title": "Travel",
+      "description": "Flights, hotels, itineraries.",
+      "functions": [
+        {"name": "travel.search_flights", "description": "Find flights between cities.", "parameters": {"type": "object", "properties": {"from": {"type": "string"}, "to": {"type": "string"}, "date": {"type": "string"}}}},
+        {"name": "travel.search_hotels", "description": "Find hotels in a city.", "parameters": {"type": "object", "properties": {"city": {"type": "string"}, "nights": {"type": "integer"}}}}
+      ]
+    },
+    {
+      "id": "health",
+      "title": "Health",
+      "description": "Wellness and nutrition info.",
+      "functions": [
+        {"name": "health.calorie_lookup", "description": "Estimate calories for a food.", "parameters": {"type": "object", "properties": {"item": {"type": "string"}}}},
+        {"name": "health.exercise_guide", "description": "Suggest exercises for a goal.", "parameters": {"type": "object", "properties": {"goal": {"type": "string"}}}}
+      ]
+    },
+    {
+      "id": "sports",
+      "title": "Sports",
+      "description": "Scores, schedules, and stats.",
+      "functions": [
+        {"name": "sports.scores", "description": "Get latest game scores.", "parameters": {"type": "object", "properties": {"league": {"type": "string"}}}},
+        {"name": "sports.schedule", "description": "Get team schedule.", "parameters": {"type": "object", "properties": {"team": {"type": "string"}}}}
+      ]
+    },
+    {
+      "id": "news",
+      "title": "News",
+      "description": "Headlines and summaries.",
+      "functions": [
+        {"name": "news.headlines", "description": "Get top headlines.", "parameters": {"type": "object", "properties": {"category": {"type": "string"}}}},
+        {"name": "news.summarize", "description": "Summarize an article.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}}}
+      ]
+    },
+    {
+      "id": "education",
+      "title": "Education",
+      "description": "Study help and quizzes.",
+      "functions": [
+        {"name": "education.flashcards", "description": "Generate study flashcards.", "parameters": {"type": "object", "properties": {"topic": {"type": "string"}}}},
+        {"name": "education.quiz", "description": "Create a multiple-choice quiz.", "parameters": {"type": "object", "properties": {"topic": {"type": "string"}, "count": {"type": "integer"}}}}
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import sys
 import os
 import json
 import re
+from collections import Counter
 try:
     import google.generativeai as genai
 except ImportError:
@@ -31,6 +32,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir) 
 
 from config import AppConfig
+from models.base import load_model_provider
 
 app = Flask(__name__)
 app.secret_key = AppConfig.SECRET_KEY
@@ -68,6 +70,221 @@ REPO_ROOT = parent_dir
 TEST_SESSIONS_FOLDER = os.path.join(REPO_ROOT, 'test-sessions')
 os.makedirs(TEST_SESSIONS_FOLDER, exist_ok=True)
 UPLOAD_FILE_COUNT = len(os.listdir(UPLOAD_FOLDER))
+
+MODEL_PROVIDER_CACHE = None
+TOPIC_DATA_PATH = os.path.join(current_dir, 'static', 'data', 'example_functions.json')
+TOPIC_CATALOG_CACHE = None
+TOPIC_INDEX_CACHE = None
+DEFAULT_TOPICS = [
+    {"id": "travel", "title": "Travel", "description": "Flights, hotels, itineraries."},
+    {"id": "science", "title": "Science", "description": "Facts, summaries, lookups."},
+    {"id": "math", "title": "Math", "description": "Arithmetic, primes, and geometry."},
+    {"id": "weather", "title": "Weather", "description": "Forecasts and conditions."},
+    {"id": "finance", "title": "Finance", "description": "Budgets, markets, and analysis."},
+    {"id": "coding", "title": "Coding", "description": "APIs, debugging, code examples."},
+    {"id": "health", "title": "Health", "description": "Wellness and nutrition guidance."},
+    {"id": "education", "title": "Education", "description": "Study help and quizzes."}
+]
+TOPIC_SYNONYM_MAP = {
+    "physics": ["physics", "mechanics", "mechanic", "quantum", "gravity", "force", "forces", "energy", "motion", "optics", "electromagnetism", "relativity", "thermodynamics", "waves"],
+    "science": ["science", "scientific", "biology", "chemistry", "research", "experiment", "experiments", "lab", "laboratory"],
+    "search": ["search", "lookup", "google", "bing", "find", "discover", "locate", "query", "information", "research"],
+    "trivia": ["trivia", "facts", "fact", "quiz", "questions", "curiosity", "knowledge"],
+    "math": ["math", "mathematics", "algebra", "geometry", "calculus", "statistics", "arithmetic", "numbers", "equations"],
+    "weather": ["weather", "forecast", "temperature", "rain", "climate", "conditions", "storm", "humidity"],
+    "finance": ["finance", "stocks", "markets", "budget", "investing", "investment", "money", "economy", "economic"],
+    "coding": ["coding", "programming", "debug", "debugging", "code", "software", "api", "development", "compute"],
+    "travel": ["travel", "trip", "journey", "flights", "flight", "hotel", "vacation", "itinerary", "tourism"],
+    "health": ["health", "wellness", "nutrition", "fitness", "exercise", "diet", "medical", "medicine"],
+    "sports": ["sports", "sport", "game", "games", "scores", "athletics", "leagues", "teams", "tournament"],
+    "news": ["news", "headline", "headlines", "breaking", "articles", "media", "press", "reports", "reporting"],
+    "education": ["education", "study", "studies", "learning", "school", "teaching", "quiz", "lesson", "class"]
+}
+STOPWORDS = {
+    'the', 'a', 'an', 'and', 'or', 'for', 'with', 'to', 'of', 'in', 'on', 'about', 'is', 'are', 'was', 'were',
+    'be', 'being', 'been', 'that', 'this', 'those', 'these', 'over', 'under', 'between', 'how', 'what', 'where',
+    'which', 'when', 'who', 'why', 'you', 'your', 'please', 'can', 'could', 'would', 'should', 'tell', 'me',
+    'give', 'show', 'list', 'explain', 'provide', 'find', 'from', 'into', 'at', 'by', 'it', 'as'
+}
+WORD_PATTERN = re.compile(r"[A-Za-z0-9']+")
+
+
+def _get_model_provider():
+    """Load and cache the local Hugging Face provider if configured."""
+    global MODEL_PROVIDER_CACHE
+    if AppConfig.MODEL_BACKEND != 'huggingface':
+        return None
+    if MODEL_PROVIDER_CACHE is None:
+        try:
+            MODEL_PROVIDER_CACHE = load_model_provider()
+        except Exception as exc:  # noqa: BLE001 - log and continue
+            print(f"Unable to load local model provider: {exc}")
+            MODEL_PROVIDER_CACHE = False
+    return MODEL_PROVIDER_CACHE if MODEL_PROVIDER_CACHE else None
+
+
+def _tokenize(text: str) -> list[str]:
+    if not text:
+        return []
+    tokens = []
+    for match in WORD_PATTERN.findall(text):
+        token = match.lower()
+        if token not in STOPWORDS:
+            tokens.append(token)
+    return tokens
+
+
+def _load_topic_catalog() -> list[dict]:
+    global TOPIC_CATALOG_CACHE
+    if TOPIC_CATALOG_CACHE is None:
+        try:
+            with open(TOPIC_DATA_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            topics = data.get('topics') if isinstance(data, dict) else []
+            if not isinstance(topics, list):
+                topics = []
+            TOPIC_CATALOG_CACHE = topics
+        except FileNotFoundError:
+            TOPIC_CATALOG_CACHE = DEFAULT_TOPICS.copy()
+        except Exception as exc:  # noqa: BLE001 - log only
+            print(f"Failed to load topic catalog: {exc}")
+            TOPIC_CATALOG_CACHE = DEFAULT_TOPICS.copy()
+    return TOPIC_CATALOG_CACHE
+
+
+def _build_topic_index() -> list[dict]:
+    global TOPIC_INDEX_CACHE
+    if TOPIC_INDEX_CACHE is not None:
+        return TOPIC_INDEX_CACHE
+    catalog = _load_topic_catalog()
+    index = []
+    for topic in catalog:
+        text_parts = [topic.get('title', ''), topic.get('description', '')]
+        for fn in topic.get('functions') or []:
+            text_parts.append(fn.get('name', ''))
+            text_parts.append(fn.get('description', ''))
+        tokens = set(_tokenize(' '.join(text_parts)))
+        synonyms = set(token.lower() for token in TOPIC_SYNONYM_MAP.get(topic.get('id', ''), []))
+        index.append({
+            "topic": topic,
+            "tokens": tokens | synonyms,
+            "synonyms": synonyms,
+        })
+    TOPIC_INDEX_CACHE = index
+    return TOPIC_INDEX_CACHE
+
+
+def _topic_summary(topic: dict) -> dict:
+    return {
+        "title": (topic or {}).get('title', ''),
+        "description": (topic or {}).get('description', ''),
+    }
+
+
+def _score_topics(prompt: str) -> list[dict]:
+    tokens = _tokenize(prompt)
+    if not tokens:
+        return [_topic_summary(t) for t in _load_topic_catalog()[:3]]
+    counts = Counter(tokens)
+    scored = []
+    for entry in _build_topic_index():
+        base = entry['tokens']
+        synonyms = entry['synonyms']
+        score = 0.0
+        for tok, freq in counts.items():
+            if tok in base:
+                score += freq * 1.0
+            if tok in synonyms:
+                score += freq * 1.5
+        scored.append((score, entry['topic']))
+    scored.sort(key=lambda tup: tup[0], reverse=True)
+    picks = [topic for score, topic in scored if score > 0][:3]
+    if not picks:
+        picks = _load_topic_catalog()[:3]
+    return [_topic_summary(t) for t in picks]
+
+
+def _extract_json_object(text: str):
+    if not text:
+        return None
+    decoder = json.JSONDecoder()
+    stripped = text.strip()
+    try:
+        obj, _ = decoder.raw_decode(stripped)
+        return obj
+    except json.JSONDecodeError:
+        pass
+    for idx, char in enumerate(stripped):
+        if char == '{':
+            try:
+                obj, _ = decoder.raw_decode(stripped[idx:])
+                return obj
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def _normalize_topics(value) -> list[dict]:
+    topics: list[dict] = []
+    if isinstance(value, dict):
+        value = value.get('items') or value.get('topics') or value.get('list')
+    if isinstance(value, list):
+        for entry in value:
+            if isinstance(entry, dict):
+                title = str(entry.get('title') or entry.get('topic') or entry.get('name') or '').strip()
+                desc = str(entry.get('description') or entry.get('detail') or entry.get('summary') or '').strip()
+            else:
+                title = str(entry).strip()
+                desc = ''
+            if title:
+                topics.append({"title": title, "description": desc})
+    return topics
+
+
+def _normalize_followups(value) -> list[str]:
+    followups: list[str] = []
+    if isinstance(value, dict):
+        value = value.get('items') or value.get('questions') or value.get('followUps')
+    if isinstance(value, list):
+        for entry in value:
+            text = str(entry).strip()
+            if text:
+                followups.append(text)
+    return followups
+
+
+def _llm_related_topics(prompt: str) -> dict | None:
+    provider = _get_model_provider()
+    if not provider:
+        return None
+    system_prompt = (
+        "You help a conversation facilitator suggest relevant directions. "
+        "Given the user's original prompt, respond ONLY with minified JSON containing two keys: "
+        "'topics' (array of up to 3 objects with 'title' and 'description') and 'followUps' (array of up to 2 example questions)."
+    )
+    user_message = (
+        "Original prompt:\n"
+        f"{prompt}\n"
+        "Return JSON now."
+    )
+    try:
+        raw = provider.generate([
+            {"role": "user", "content": user_message}
+        ], system_prompt=system_prompt, max_new_tokens=256, temperature=0.4)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Local LLM related-topics failure: {exc}")
+        return None
+    parsed = _extract_json_object(raw)
+    if not isinstance(parsed, dict):
+        return None
+    topics = _normalize_topics(parsed.get('topics') or parsed.get('related_topics'))
+    followups = _normalize_followups(parsed.get('followUps') or parsed.get('followups') or parsed.get('follow_up_questions'))
+    if not topics:
+        return None
+    return {
+        "topics": topics[:3],
+        "followUps": followups[:2],
+    }
 
 @app.route("/")
 def index():
@@ -220,6 +437,22 @@ def upload_json():
         return jsonify({"error": f"Invalid JSON: {je}"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/related_topics', methods=['POST'])
+def related_topics():
+    payload = request.get_json(silent=True) or {}
+    prompt = (payload.get('prompt') or '').strip()
+    if not prompt:
+        return jsonify({"topics": [], "followUps": [], "source": "none"}), 200
+
+    llm_payload = _llm_related_topics(prompt)
+    if llm_payload:
+        llm_payload['source'] = 'llm'
+        return jsonify(llm_payload), 200
+
+    topics = _score_topics(prompt)
+    return jsonify({"topics": topics, "followUps": [], "source": "fallback"}), 200
 
 # ----------------------------
 # Save chat route

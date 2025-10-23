@@ -56,6 +56,7 @@ body {
 #start-screen { position: relative; min-height: 100vh; display: flex; flex-direction: column; }
 .center-hero { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
 .hero-title { font-size: clamp(24px, 4vw, 48px); font-weight: 700; color: var(--accent); }
+.hero-tagline { margin-top: 12px; font-size: clamp(16px, 2.2vw, 20px); color: var(--muted-text); max-width: 640px; margin-left: auto; margin-right: auto; }
 .tool-grid { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; width: min(900px, 92%); margin: 20px auto 0; }
 .tool-card { border: 1px solid var(--panel-border); background: var(--panel-bg); border-radius: 12px; padding: 14px; text-align: left; min-height: 90px; }
 .tool-card h4 { margin: 0 0 6px 0; font-size: 14px; }
@@ -100,6 +101,14 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+}
+
+.lhs-intro {
+    max-width: 75%;
+}
+.lhs-intro .title {
+    font-size: 18px;
+    line-height: 1.4;
 }
 
 .title { font-weight: 600; font-size: 18px; }
@@ -242,8 +251,8 @@ details.tool[open] > summary::before { content: '\25BE'; }
     padding: 10px;
 }
 
-/* Example prompt callout */
-.example-prompt-callout {
+/* Latest prompt callout */
+.latest-prompt-callout {
     background: linear-gradient(180deg, var(--bg), var(--panel-bg));
     border: 1px solid var(--panel-border);
     border-radius: 10px;
@@ -253,8 +262,8 @@ details.tool[open] > summary::before { content: '\25BE'; }
     color: var(--text);
     box-shadow: 0 1px 0 rgba(0,0,0,0.04);
 }
-.example-prompt-callout::before {
-    content: 'Suggested prompt';
+.latest-prompt-callout::before {
+    content: 'Your prompt';
     display: block; /* put on its own line */
     font-size: 12px; /* slightly larger */
     font-weight: 600;
@@ -280,19 +289,45 @@ details.tool[open] > summary::before { content: '\25BE'; }
 .function-idea-desc { font-size: 12px; color: var(--muted-text); }
 
 /* Start screen sample prompt size */
-.sample-prompt-text { font-size: 16px; }
+.sample-prompt-text { font-size: 20px; line-height: 1.6; }
 
-/* Example Topics list */
-.example-topics-list { display: grid; gap: 8px; margin-top: 6px; }
-.example-topic-item {
+#start-mic-btn {
+    width: 56px;
+    height: 56px;
+    font-size: 24px;
+}
+
+#mic-btn {
+    width: 56px;
+    height: 56px;
+    font-size: 24px;
+}
+.followup-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+}
+.followup-list li {
+    border: 1px solid var(--panel-border);
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: var(--text);
+}
+
+/* Related topics list */
+.related-topics-list { display: grid; gap: 8px; margin-top: 6px; }
+.related-topic-item {
     border: 1px solid var(--panel-border);
     background: var(--bg);
     border-radius: 8px;
     padding: 8px 10px;
 }
-.example-topic-item.active { outline: 2px solid var(--accent); outline-offset: 0; }
-.example-topic-title { font-weight: 600; font-size: 13px; }
-.example-topic-desc { font-size: 12px; color: var(--muted-text); }
+.related-topic-title { font-weight: 600; font-size: 13px; }
+.related-topic-desc { font-size: 12px; color: var(--muted-text); margin-top: 2px; }
 
 @media (max-width: 768px) {
     .main-container {

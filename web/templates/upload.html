@@ -19,7 +19,6 @@
             <div>
                 <div class="hero-title">Welcome to Blanca</div>
                 <div class="hero-tagline subtle">Please use the microphone to begin your prompt. Below are some of the possible topics you can ask and an example question.</div>
-                <div id="start-tool-grid" class="tool-grid"></div>
                 <div id="start-sample-prompt" class="sample-prompt-text subtle" style="margin-top:12px; text-align:center;"></div>
             </div>
         </div>
@@ -50,11 +49,6 @@
             <div id="entry-list"></div>
         </div>
 
-    <div id="function-ideas-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Function Ideas</div>
-        <div id="function-ideas-grid" class="function-ideas-grid"></div>
-    </div>
-
     <div id="latest-prompt-panel" class="hidden" style="margin-top: 8px;">
         <div class="section-title">Your Prompt</div>
         <div id="latest-prompt-content" class="latest-prompt-callout"></div>
@@ -66,8 +60,6 @@
     </div>
 
     <div id="question-display" style="margin-top: auto;"></div>
-    <div class="section-title inline-controls"><span>Tools</span></div>
-    <div id="toolbox-view-left"></div>
 
     <div id="related-topics-panel" class="hidden" style="margin-top: 12px;">
         <div class="section-title">Related Topics</div>
@@ -149,7 +141,6 @@
     let lastParsed = null;
     let allEntries = []; // Global store for unique entries
     let lastRawText = '';
-    let functionIndex = []; // flattened functions with vectors for similarity
     let startSamplePrompt = '';
     let latestUserPrompt = '';
     let lastUserQueryText = '';
@@ -297,7 +288,6 @@
                 }
             });
             renderEntryList();
-            renderToolboxView();
             transitionToMain();
             // Auto-submit first entry
             const first = allEntries[0];
@@ -803,7 +793,6 @@
                 });
 
                 renderEntryList();
-                renderToolboxView(); // Render tools to the left panel
 
                 // If this is the first upload or new entries were added,
                 // render the details of the first overall entry.
@@ -921,7 +910,6 @@
                     e.stopPropagation(); // Prevent the main button click
                     allEntries = allEntries.filter(e => e.id !== entry.id);
                     renderEntryList();
-                    renderToolboxView(); // Re-render tools in left panel
                     // Optional: Clear the view if the active entry was removed
                     if (lastParsed && lastParsed.id === entry.id) {
                         document.getElementById('json-meta').innerHTML = '';
@@ -1001,91 +989,7 @@
 
             // Update raw JSON view in modal if raw present
             if (entry.raw && rawPre) { rawPre.textContent = JSON.stringify(entry.raw, null, 2); }
-            // The toolbox is now global and does not need to be re-rendered on entry selection.
-        }
-
-        function renderToolboxView(){
-            const functions = [];
-            allEntries.forEach(entry => {
-                (entry.functions || []).forEach(func => {
-                    functions.push({ ...func, entryId: entry.id });
-                });
-            });
-
-            // Build function index with vectors for similarity
-            functionIndex = functions.map(fn => {
-                const full = (fn.name || '').trim();
-                let toolbox = 'misc';
-                let tool = full || '(unnamed)';
-                if (full.includes('.')){
-                    const idx = full.indexOf('.');
-                    toolbox = full.slice(0, idx) || 'misc';
-                    tool = full.slice(idx+1) || '(unnamed)';
-                }
-                const paramNames = [];
-                try {
-                    const params = fn.parameters || {};
-                    if (params && params.properties) {
-                        for (const k of Object.keys(params.properties)) paramNames.push(k);
-                    }
-                } catch {}
-                const text = [full, fn.description || '', paramNames.join(' ')].join(' ').toLowerCase();
-                return {
-                    fullName: full,
-                    toolbox,
-                    tool,
-                    desc: fn.description || '',
-                    params: fn.parameters,
-                    entryId: fn.entryId,
-                    triVector: trigramVector(text),
-                    wordVector: wordVector(text),
-                    tokens: new Set(text.split(/[^a-z0-9]+/).filter(Boolean))
-                };
-            });
-
-            const container = document.getElementById('toolbox-view-left');
-            container.innerHTML = '';
-            if (!functions || !functions.length){
-                const p = document.createElement('p'); p.className = 'subtle'; p.textContent = 'No tools found in JSON.'; container.appendChild(p); return;
-            }
-            const groups = {};
-            for (const fi of functionIndex){
-                if (!groups[fi.toolbox]) groups[fi.toolbox] = [];
-                groups[fi.toolbox].push({ tool: fi.tool, desc: fi.desc, params: fi.params, entryId: fi.entryId });
-            }
-
-            const toolboxNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
-            for (const name of toolboxNames){
-                const items = groups[name];
-                const details = document.createElement('details');
-                details.className = 'toolbox';
-                const summary = document.createElement('summary');
-                summary.innerHTML = `${name} <span class="badge">${items.length}</span>`;
-                details.appendChild(summary);
-                const ul = document.createElement('ul');
-                ul.className = 'tool-list';
-                for (const it of items){
-                    const li = document.createElement('li');
-                    const d = document.createElement('details'); d.className = 'tool';
-                    const s = document.createElement('summary'); 
-                    s.textContent = it.tool;
-
-                    const entryIdSpan = document.createElement('span');
-                    entryIdSpan.className = 'tool-entry-id';
-                    entryIdSpan.textContent = it.entryId || '';
-                    s.appendChild(entryIdSpan);
-
-                    d.appendChild(s);
-                    if (it.desc){ const desc = document.createElement('div'); desc.className = 'tool-desc'; desc.textContent = it.desc; d.appendChild(desc); }
-                    if (it.params){ const pre = document.createElement('pre'); pre.className = 'tool-params'; pre.textContent = JSON.stringify(it.params, null, 2); d.appendChild(pre); }
-                    li.appendChild(d);
-                    ul.appendChild(li);
-                }
-                details.appendChild(ul);
-                container.appendChild(details);
-            }
-            // Render function ideas
-            renderFunctionIdeas();
+            // Toolbox content removed; only conversational prompt UI remains.
         }
 
         // --- Similarity helpers (trigram + cosine) ---
@@ -1114,23 +1018,6 @@
             for (const [k,w] of smaller){ const w2 = other.get(k)||0; if (w2) dot += w*w2; }
             if (!norm1 || !norm2) return 0;
             return dot / (Math.sqrt(norm1)*Math.sqrt(norm2));
-        }
-        function renderFunctionIdeas(){
-            const panel = document.getElementById('function-ideas-panel');
-            const grid = document.getElementById('function-ideas-grid');
-            if (!functionIndex.length){ panel.classList.add('hidden'); grid.innerHTML=''; return; }
-            const n = Math.min(functionIndex.length, Math.floor(Math.random()*2)+4); // 4 or 5
-            const picks = pickRandom(functionIndex, n);
-            grid.innerHTML = '';
-            for (const fi of picks){
-                const card = document.createElement('div');
-                card.className = 'function-idea-card';
-                const title = document.createElement('div'); title.className = 'function-idea-title'; title.textContent = `${fi.toolbox}.${fi.tool}`;
-                const desc = document.createElement('div'); desc.className = 'function-idea-desc'; desc.textContent = fi.desc || '';
-                card.appendChild(title); card.appendChild(desc);
-                grid.appendChild(card);
-            }
-            panel.classList.remove('hidden');
         }
         function buildKeywordTopicIndex(topics){
             if (!Array.isArray(topics)) return;

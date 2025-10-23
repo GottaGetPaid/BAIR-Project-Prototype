@@ -17,7 +17,8 @@
         </div>
         <div class="center-hero">
             <div>
-                <div class="hero-title">Hello</div>
+                <div class="hero-title">Welcome to Bianca</div>
+                <div class="hero-tagline subtle">Please use the microphone to begin your prompt. Below are some of the possible topics you can ask and an example question.</div>
                 <div id="start-tool-grid" class="tool-grid"></div>
                 <div id="start-sample-prompt" class="sample-prompt-text subtle" style="margin-top:12px; text-align:center;"></div>
             </div>
@@ -37,9 +38,9 @@
     <div class="main-container hidden" id="main-app">
         <div class="left-panel">
         <div class="top-bar">
-            <div>
-                <div class="title">Model Resources</div>
-                <div class="subtle">See what functions and tools are being used</div>
+            <div class="lhs-intro">
+                <div class="title">Please continue your conversation using the microphone.</div>
+                <div class="subtle">Below are some related topics you can explore.</div>
             </div>
             <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
         </div>
@@ -54,23 +55,23 @@
         <div id="function-ideas-grid" class="function-ideas-grid"></div>
     </div>
 
-    <div id="example-prompt-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Example Prompt</div>
-        <div id="example-prompt-content" class="example-prompt-callout"></div>
+    <div id="latest-prompt-panel" class="hidden" style="margin-top: 8px;">
+        <div class="section-title">Your Prompt</div>
+        <div id="latest-prompt-content" class="latest-prompt-callout"></div>
     </div>
 
-    <div id="suggested-tool-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Suggested Tool</div>
-        <div id="suggested-tool-content" class="subtle"></div>
+    <div id="followup-panel" class="hidden" style="margin-top: 8px;">
+        <div class="section-title">Suggested Follow-ups</div>
+        <ul id="followup-list" class="followup-list"></ul>
     </div>
 
     <div id="question-display" style="margin-top: auto;"></div>
     <div class="section-title inline-controls"><span>Tools</span></div>
     <div id="toolbox-view-left"></div>
 
-    <div id="example-topics-panel" class="hidden" style="margin-top: 12px;">
-        <div class="section-title">Example Topics</div>
-        <div id="example-topics-list" class="example-topics-list"></div>
+    <div id="related-topics-panel" class="hidden" style="margin-top: 12px;">
+        <div class="section-title">Related Topics</div>
+        <div id="related-topics-list" class="related-topics-list"></div>
     </div>
     </div>
 
@@ -100,7 +101,7 @@
 </div>
 
     <!-- Floating Tools button -->
-    <button id="tools-fab" class="icon-btn" title="Tools & Raw JSON">🧰</button>
+    <!-- <button id="tools-fab" class="icon-btn" title="Tools & Raw JSON">🧰</button> -->
 
     <!-- Modal for Tools & Raw JSON -->
     <div id="tools-modal" class="modal-backdrop" aria-hidden="true">
@@ -149,9 +150,13 @@
     let allEntries = []; // Global store for unique entries
     let lastRawText = '';
     let functionIndex = []; // flattened functions with vectors for similarity
-    let currentSamplePrompt = '';
+    let startSamplePrompt = '';
+    let latestUserPrompt = '';
     let lastUserQueryText = '';
-    let topicIndex = []; // topics with vectors for inference
+    const relatedTopicsState = { topics: [], followUps: [], source: 'none' };
+    let keywordTopicIndex = [];
+    let keywordTopicItems = [];
+    let relatedFetchToken = 0;
 
     // Modal handling and raw JSON toggler (modal)
     const toolsFab = document.getElementById('tools-fab');
@@ -159,13 +164,17 @@
     const toolsModalClose = document.getElementById('tools-modal-close');
     const rawPre = document.getElementById('json-content');
     const rawBtn = document.getElementById('toggle-raw-btn');
-    toolsFab.addEventListener('click', ()=>{ toolsModal.classList.add('show'); });
-    toolsModalClose.addEventListener('click', ()=>{ toolsModal.classList.remove('show'); });
-    toolsModal.addEventListener('click', (e)=>{ if (e.target === toolsModal) toolsModal.classList.remove('show'); });
-    rawBtn.addEventListener('click', ()=>{
-        const hidden = rawPre.classList.toggle('hidden');
-        rawBtn.textContent = hidden ? 'Show' : 'Hide';
-    });
+    if (toolsFab && toolsModal && toolsModalClose) {
+        toolsFab.addEventListener('click', ()=>{ toolsModal.classList.add('show'); });
+        toolsModalClose.addEventListener('click', ()=>{ toolsModal.classList.remove('show'); });
+        toolsModal.addEventListener('click', (e)=>{ if (e.target === toolsModal) toolsModal.classList.remove('show'); });
+    }
+    if (rawBtn && rawPre) {
+        rawBtn.addEventListener('click', ()=>{
+            const hidden = rawPre.classList.toggle('hidden');
+            rawBtn.textContent = hidden ? 'Show' : 'Hide';
+        });
+    }
 
     // Transition from start screen to main app
     const startScreen = document.getElementById('start-screen');
@@ -198,6 +207,20 @@
         'What is the capital of Brazil and two facts about it?',
         'Compare the MacBook Air M2 vs. Dell XPS 13 for programming and battery life.'
     ];
+    const TOPIC_SYNONYM_MAP = {
+        physics: ['physics', 'mechanics', 'mechanic', 'quantum', 'gravity', 'force', 'forces', 'energy', 'motion', 'optics', 'electromagnetism', 'relativity', 'thermodynamics', 'waves'],
+        search: ['search', 'lookup', 'google', 'bing', 'find', 'discover', 'locate', 'query', 'information', 'research'],
+        trivia: ['trivia', 'facts', 'fact', 'quiz', 'questions', 'curiosity', 'knowledge'],
+        math: ['math', 'mathematics', 'algebra', 'geometry', 'calculus', 'statistics', 'arithmetic', 'numbers', 'equations'],
+        weather: ['weather', 'forecast', 'temperature', 'rain', 'climate', 'conditions', 'storm', 'humidity'],
+        finance: ['finance', 'stocks', 'markets', 'budget', 'investing', 'investment', 'money', 'economy', 'economic'],
+        coding: ['coding', 'programming', 'debug', 'debugging', 'code', 'software', 'api', 'development', 'compute'],
+        travel: ['travel', 'trip', 'journey', 'flights', 'flight', 'hotel', 'vacation', 'itinerary', 'tourism'],
+        health: ['health', 'wellness', 'nutrition', 'fitness', 'exercise', 'diet', 'medical', 'medicine'],
+        sports: ['sports', 'game', 'games', 'scores', 'athletics', 'leagues', 'teams', 'tournament'],
+        news: ['news', 'headlines', 'breaking', 'articles', 'media', 'press', 'reports', 'reporting'],
+        education: ['education', 'study', 'learning', 'school', 'teaching', 'quiz', 'lesson', 'class']
+    };
     function pickRandom(arr, n){
         const a = arr.slice();
         for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
@@ -215,17 +238,16 @@
             card.appendChild(h4); card.appendChild(p);
             grid.appendChild(card);
         });
-        currentSamplePrompt = pickRandom(SAMPLE_PROMPTS, 1)[0] || '';
+        startSamplePrompt = pickRandom(SAMPLE_PROMPTS, 1)[0] || '';
         const sampleEl = document.getElementById('start-sample-prompt');
-        if (sampleEl) sampleEl.textContent = currentSamplePrompt ? `Try: “${currentSamplePrompt}”` : '';
+        if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try: “${startSamplePrompt}”` : '';
     }
     // Render at load
     renderStartTopics();
-        // Load example topics JSON
-        fetch('{{ url_for('static', filename='data/example_functions.json') }}')
-            .then(r=>r.json())
-            .then(data=>{ if (data && data.topics) { buildTopicIndex(data.topics); renderExampleTopics(data.topics); } })
-            .catch(()=>{});
+    fetch('{{ url_for('static', filename='data/example_functions.json') }}')
+        .then(r=>r.json())
+        .then(data => { if (data && Array.isArray(data.topics)) buildKeywordTopicIndex(data.topics); })
+        .catch(err => console.warn('Failed to load topic catalog', err));
     // Start screen controls (send, mic, upload)
     const startQueryInput = document.getElementById('start-query-input');
     const startSendBtn = document.getElementById('start-send-btn');
@@ -237,9 +259,9 @@
         const q = (startQueryInput.value || '').trim(); if (!q) return;
         transitionToMain();
         document.getElementById('query-input').value = q;
+        updateLatestPromptPanel(q);
+        refreshRelatedSuggestions(q);
         document.querySelector('#query-form button[type="submit"]').click();
-        // Show example prompt on left after sending
-        ensureExamplePromptRendered();
     });
     
     // Add Enter key support for start screen
@@ -249,15 +271,19 @@
             const q = (startQueryInput.value || '').trim(); if (!q) return;
             transitionToMain();
             document.getElementById('query-input').value = q;
+            updateLatestPromptPanel(q);
+            refreshRelatedSuggestions(q);
             document.querySelector('#query-form button[type="submit"]').click();
-            ensureExamplePromptRendered();
         }
     });
     startUploadBtn?.addEventListener('click', ()=> startFileInput.click());
     startFileInput?.addEventListener('change', function(){
         const file = this.files && this.files[0]; if (!file) return;
         const reader = new FileReader();
-        reader.onload = function(ev){ lastRawText = ev.target.result || ''; rawPre.textContent = lastRawText; };
+        reader.onload = function(ev){
+            lastRawText = ev.target.result || '';
+            if (rawPre) rawPre.textContent = lastRawText;
+        };
         reader.readAsText(file);
         const fd = new FormData(); fd.append('file', file);
         fetch('/upload_json', { method: 'POST', body: fd })
@@ -277,9 +303,10 @@
             const first = allEntries[0];
             if (first && first.questionText){
                 document.getElementById('query-input').value = first.questionText;
-                document.querySelector('#query-form button[type="submit"]').click();
                 renderEntry(first);
-                ensureExamplePromptRendered();
+                updateLatestPromptPanel(first.questionText);
+                refreshRelatedSuggestions(first.questionText);
+                document.querySelector('#query-form button[type="submit"]').click();
             }
           }).catch(err=> alert('Error during backend JSON upload: ' + err));
     });
@@ -574,7 +601,7 @@
             const reader = new FileReader();
             reader.onload = function(event) {
                 const rawText = event.target.result; lastRawText = rawText || '';
-                rawPre.textContent = rawText;
+                if (rawPre) rawPre.textContent = rawText;
             };
             reader.onerror = function(event) {
                 alert("Error reading: " + event.target.error.name);
@@ -615,11 +642,15 @@
                 // If this is the first upload or new entries were added,
                 // render the details of the first overall entry.
                 if (allEntries.length > 0 && newEntriesAdded) {
-                    renderEntry(allEntries[0]);
+                    const first = allEntries[0];
+                    renderEntry(first);
+                    if (first?.questionText) {
+                        updateLatestPromptPanel(first.questionText);
+                        refreshRelatedSuggestions(first.questionText);
+                    }
                     // Highlight the first entry button as active
                     const firstBtn = document.querySelector('.entry-btn');
                     if(firstBtn) firstBtn.classList.add('active');
-                    ensureExamplePromptRendered();
                 }
             })
             .catch(error => {
@@ -655,10 +686,9 @@
             // Clear input
             queryInput.value = '';
 
-            // Update example prompt and suggested tool
-            ensureExamplePromptRendered();
-            showSuggestedTool(lastUserQueryText);
-            inferAndHighlightTopic(lastUserQueryText);
+            // Update left rail context
+            updateLatestPromptPanel(query);
+            refreshRelatedSuggestions(query);
 
             //send query to backend
             const queryData = new FormData();
@@ -730,7 +760,7 @@
                     if (lastParsed && lastParsed.id === entry.id) {
                         document.getElementById('json-meta').innerHTML = '';
                         document.getElementById('question-display').innerHTML = '';
-                        rawPre.textContent = '';
+                        if (rawPre) rawPre.textContent = '';
                         lastParsed = null;
                     }
                 });
@@ -804,7 +834,7 @@
             questionDiv.appendChild(submitBtn);
 
             // Update raw JSON view in modal if raw present
-            if (entry.raw) { rawPre.textContent = JSON.stringify(entry.raw, null, 2); }
+            if (entry.raw && rawPre) { rawPre.textContent = JSON.stringify(entry.raw, null, 2); }
             // The toolbox is now global and does not need to be re-rendered on entry selection.
         }
 
@@ -888,11 +918,6 @@
                 details.appendChild(ul);
                 container.appendChild(details);
             }
-
-            // If we already have a last query, update the suggestion
-            if (lastUserQueryText) showSuggestedTool(lastUserQueryText);
-            if (lastUserQueryText) inferAndHighlightTopic(lastUserQueryText);
-
             // Render function ideas
             renderFunctionIdeas();
         }
@@ -924,42 +949,6 @@
             if (!norm1 || !norm2) return 0;
             return dot / (Math.sqrt(norm1)*Math.sqrt(norm2));
         }
-        function showSuggestedTool(queryText){
-            const panel = document.getElementById('suggested-tool-panel');
-            const content = document.getElementById('suggested-tool-content');
-            if (!functionIndex.length){ content.textContent = 'No tools loaded yet.'; panel.classList.remove('hidden'); return; }
-
-            const q = (queryText||'').toLowerCase();
-            const qTri = trigramVector(q);
-            const qWord = wordVector(q);
-            const qTokens = new Set(q.split(/[^a-z0-9]+/).filter(Boolean));
-            let best = null, bestScore = -1, bestParts = {tri:0, word:0, boost:0};
-            for (const fi of functionIndex){
-                const sTri = cosineSim(qTri, fi.triVector);
-                const sWord = cosineSim(qWord, fi.wordVector);
-                // Boost for shared tokens in toolbox/tool name
-                let boost = 0;
-                for (const tok of qTokens){
-                    if (fi.tokens.has(tok)) boost += 0.02; // small incremental boost
-                    if (tok === fi.toolbox || tok === fi.tool) boost += 0.05;
-                }
-                const s = 0.7*sTri + 0.3*sWord + boost;
-                if (s > bestScore){ bestScore = s; best = fi; bestParts = {tri:sTri, word:sWord, boost}; }
-            }
-            if (!best){ content.textContent = 'No suggestion available.'; panel.classList.remove('hidden'); return; }
-            const pct = Math.max(0, Math.min(1, bestScore))*100;
-            content.innerHTML = `<strong>${best.toolbox}.${best.tool}</strong>${best.desc?` — ${best.desc}`:''}<br><span class="subtle">Match: ${pct.toFixed(1)}% (tri:${(bestParts.tri*100).toFixed(0)}% word:${(bestParts.word*100).toFixed(0)}%)</span>`;
-            panel.classList.remove('hidden');
-        }
-
-        function ensureExamplePromptRendered(){
-            const p = document.getElementById('example-prompt-panel');
-            const c = document.getElementById('example-prompt-content');
-            if (!currentSamplePrompt){ return; }
-            c.textContent = currentSamplePrompt;
-            p.classList.remove('hidden');
-        }
-
         function renderFunctionIdeas(){
             const panel = document.getElementById('function-ideas-panel');
             const grid = document.getElementById('function-ideas-grid');
@@ -977,46 +966,148 @@
             }
             panel.classList.remove('hidden');
         }
-
-        // --- Example Topics ---
-        function buildTopicIndex(topics){
-            topicIndex = topics.map(t => {
+        function buildKeywordTopicIndex(topics){
+            if (!Array.isArray(topics)) return;
+            keywordTopicItems = topics.slice();
+            keywordTopicIndex = keywordTopicItems.map(t => {
                 const text = [t.title, t.description, ...(t.functions||[]).map(f=>`${f.name} ${f.description}`)].join(' ').toLowerCase();
-                return { id: t.id, title: t.title, description: t.description, triVector: trigramVector(text), wordVector: wordVector(text) };
+                const synonyms = new Set((TOPIC_SYNONYM_MAP[t.id] || []).map(s => s.toLowerCase()));
+                const tokens = new Set(text.split(/[^a-z0-9]+/).filter(Boolean));
+                synonyms.forEach(s => tokens.add(s));
+                return {
+                    topic: t,
+                    triVector: trigramVector(text),
+                    wordVector: wordVector(text),
+                    tokens,
+                    synonyms
+                };
             });
         }
-        function renderExampleTopics(topics){
-            const panel = document.getElementById('example-topics-panel');
-            const list = document.getElementById('example-topics-list');
-            if (!topics || !topics.length){ panel.classList.add('hidden'); return; }
+
+        function keywordTopicFallback(prompt){
+            const q = (prompt || '').toLowerCase();
+            if (!q || !keywordTopicIndex.length) return keywordTopicItems.slice(0, 3).map(t => ({ title: t.title, description: t.description || '' }));
+            const qTri = trigramVector(q);
+            const qWord = wordVector(q);
+            const qTokens = new Set(q.split(/[^a-z0-9]+/).filter(Boolean));
+            const scored = keywordTopicIndex.map(entry => {
+                const tri = cosineSim(qTri, entry.triVector);
+                const word = cosineSim(qWord, entry.wordVector);
+                let boost = 0;
+                qTokens.forEach(tok => {
+                    if (entry.tokens.has(tok)) boost += 0.04;
+                    if (entry.synonyms.has(tok)) boost += 0.08;
+                });
+                return { entry, score: (0.6 * tri) + (0.4 * word) + boost };
+            }).sort((a,b)=>b.score - a.score);
+            const filtered = scored.filter(s => s.score > 0.01).slice(0, 3);
+            const picks = filtered.length ? filtered : scored.slice(0, 3);
+            const mapped = picks.map(item => ({
+                title: item.entry.topic.title,
+                description: item.entry.topic.description || ''
+            })).filter(t => t.title);
+            if (!mapped.length){
+                return ALL_TOPICS.slice(0, 3).map(t => ({ title: t.title, description: t.desc || '' }));
+            }
+            return mapped;
+        }
+
+        function updateLatestPromptPanel(text){
+            if (typeof text === 'string') {
+                latestUserPrompt = text.trim();
+            }
+            const panel = document.getElementById('latest-prompt-panel');
+            const content = document.getElementById('latest-prompt-content');
+            if (!panel || !content) return;
+            if (latestUserPrompt){
+                content.textContent = latestUserPrompt;
+                panel.classList.remove('hidden');
+            } else {
+                content.textContent = '';
+                panel.classList.add('hidden');
+            }
+        }
+
+        function renderFollowupExamples(followUps){
+            const panel = document.getElementById('followup-panel');
+            const list = document.getElementById('followup-list');
+            if (!panel || !list) return;
             list.innerHTML = '';
-            for (const t of topics){
-                const item = document.createElement('div');
-                item.className = 'example-topic-item';
-                const title = document.createElement('div'); title.className = 'example-topic-title'; title.textContent = t.title;
-                const desc = document.createElement('div'); desc.className = 'example-topic-desc'; desc.textContent = t.description || '';
-                item.dataset.topicId = t.id;
-                item.appendChild(title); item.appendChild(desc);
-                list.appendChild(item);
+            const items = Array.isArray(followUps) ? followUps.filter(Boolean).map(f => String(f).trim()).filter(Boolean).slice(0, 2) : [];
+            if (!items.length){
+                panel.classList.add('hidden');
+                return;
+            }
+            for (const q of items){
+                const li = document.createElement('li');
+                li.textContent = q;
+                list.appendChild(li);
             }
             panel.classList.remove('hidden');
         }
-        function inferAndHighlightTopic(query){
-            const list = document.getElementById('example-topics-list');
-            if (!list || !topicIndex.length) return;
-            const q = (query||'').toLowerCase();
-            const qTri = trigramVector(q);
-            const qWord = wordVector(q);
-            let bestId = null, bestScore = -1;
-            for (const t of topicIndex){
-                const s = 0.7*cosineSim(qTri, t.triVector) + 0.3*cosineSim(qWord, t.wordVector);
-                if (s > bestScore){ bestScore = s; bestId = t.id; }
+
+        function renderRelatedTopics(topics){
+            const panel = document.getElementById('related-topics-panel');
+            const list = document.getElementById('related-topics-list');
+            if (!panel || !list) return;
+            list.innerHTML = '';
+            const items = Array.isArray(topics) ? topics.filter(Boolean).slice(0, 3) : [];
+            if (!items.length){
+                panel.classList.add('hidden');
+                return;
             }
-            // Clear highlights
-            list.querySelectorAll('.example-topic-item').forEach(el => el.classList.remove('active'));
-            if (bestId){
-                const el = list.querySelector(`.example-topic-item[data-topic-id="${bestId}"]`);
-                if (el) el.classList.add('active');
+            items.forEach(t => {
+                const item = document.createElement('div');
+                item.className = 'related-topic-item';
+                const title = document.createElement('div');
+                title.className = 'related-topic-title';
+                title.textContent = t.title || '';
+                const desc = document.createElement('div');
+                desc.className = 'related-topic-desc';
+                desc.textContent = t.description || '';
+                item.appendChild(title);
+                if (desc.textContent) item.appendChild(desc);
+                list.appendChild(item);
+            });
+            panel.classList.remove('hidden');
+        }
+
+        async function refreshRelatedSuggestions(prompt){
+            const trimmed = (prompt || '').trim();
+            const requestToken = ++relatedFetchToken;
+            if (!trimmed){
+                relatedTopicsState.topics = [];
+                relatedTopicsState.followUps = [];
+                relatedTopicsState.source = 'none';
+                renderRelatedTopics([]);
+                renderFollowupExamples([]);
+                return;
+            }
+            try {
+                const res = await fetch('/related_topics', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: trimmed })
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (requestToken !== relatedFetchToken) return;
+                relatedTopicsState.topics = Array.isArray(data.topics) ? data.topics : [];
+                relatedTopicsState.followUps = Array.isArray(data.followUps) ? data.followUps : [];
+                relatedTopicsState.source = data.source || 'unknown';
+                if (!relatedTopicsState.topics.length){
+                    relatedTopicsState.topics = keywordTopicFallback(trimmed);
+                }
+                renderRelatedTopics(relatedTopicsState.topics);
+                renderFollowupExamples(relatedTopicsState.followUps);
+            } catch (err) {
+                console.error('Failed to fetch related topics', err);
+                if (requestToken !== relatedFetchToken) return;
+                relatedTopicsState.topics = keywordTopicFallback(trimmed);
+                relatedTopicsState.followUps = [];
+                relatedTopicsState.source = 'fallback-client';
+                renderRelatedTopics(relatedTopicsState.topics);
+                renderFollowupExamples([]);
             }
         }
 

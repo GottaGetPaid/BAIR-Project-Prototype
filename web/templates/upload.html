@@ -409,12 +409,6 @@
                             startQueryInput.style.fontStyle = 'normal';
                             startQueryInput.style.opacity = '1';
                             startHasFinalTranscript = true;
-                            
-                            // Auto-submit on final transcript - don't wait for user to click mic again
-                            console.log('[Start screen] Got final transcript, auto-submitting...');
-                            setTimeout(() => {
-                                stopStartScreenDeepgramStreaming();
-                            }, 500);
                         }
                     } else if (data.llm_response) {
                         // Ignore LLM interjections on start screen

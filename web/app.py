@@ -682,14 +682,23 @@ def _save_voice_metadata(metadata: dict, transcript: str) -> str:
         filename = f"voice_metadata_{timestamp}.json"
         filepath = os.path.join(VOICE_METADATA_FOLDER, filename)
         
+        # Build full transcript from words to ensure consistency
+        words_list = metadata.get('words', [])
+        if words_list:
+            # Always generate transcript from word metadata to ensure it matches
+            generated_transcript = ' '.join(w.get('punctuated_word', w.get('word', '')) for w in words_list)
+            # Use generated transcript if provided transcript doesn't match word count
+            if not transcript or len(transcript.split()) != len(words_list):
+                transcript = generated_transcript
+        
         # Add transcript and analysis
         full_metadata = {
             "transcript": transcript,
             "session_start": metadata.get('session_start'),
             "total_duration_seconds": metadata.get('total_duration', 0.0),
-            "word_count": len(metadata.get('words', [])),
+            "word_count": len(words_list),
             "utterance_count": len(metadata.get('utterances', [])),
-            "words": metadata.get('words', []),
+            "words": words_list,
             "utterances": metadata.get('utterances', []),
             "saved_at": datetime.utcnow().isoformat() + 'Z'
         }
@@ -897,25 +906,29 @@ def stt_deepgram(ws):
                                 # Save voice metadata before responding
                                 _save_voice_metadata(conversation.voice_metadata, conversation.transcript)
                                 
+                                # Capture current transcript for the LLM response
+                                current_transcript = conversation.transcript
+                                
+                                # Reset transcript and metadata IMMEDIATELY to prevent accumulation
+                                conversation.transcript = ""
+                                conversation.voice_metadata = {
+                                    "words": [],
+                                    "utterances": [],
+                                    "session_start": datetime.utcnow().isoformat() + 'Z',
+                                    "total_duration": 0.0
+                                }
+                                
                                 # Get LLM response in a separate thread to avoid blocking
                                 def get_response():
                                     import asyncio
                                     loop = asyncio.new_event_loop()
                                     asyncio.set_event_loop(loop)
-                                    response = loop.run_until_complete(conversation.get_llm_response(conversation.transcript))
+                                    response = loop.run_until_complete(conversation.get_llm_response(current_transcript))
                                     if response:
                                         ws.send(json.dumps({
                                             "llm_response": response,
                                             "type": "interjection"
                                         }))
-                                        # Reset transcript and metadata after response
-                                        conversation.transcript = ""
-                                        conversation.voice_metadata = {
-                                            "words": [],
-                                            "utterances": [],
-                                            "session_start": datetime.utcnow().isoformat() + 'Z',
-                                            "total_duration": 0.0
-                                        }
                                     loop.close()
                                 
                                 threading.Thread(target=get_response, daemon=True).start()

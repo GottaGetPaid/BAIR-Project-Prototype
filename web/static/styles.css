@@ -253,36 +253,71 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
 
 /* Start screen examples */
 .start-examples {
-    margin-top: 24px;
+    margin-top: 32px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
+    gap: 24px;
+    align-items: center;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 92%;
+}
+.start-topics-section,
+.start-example-section {
+    width: 100%;
 }
 .start-section-title {
-    font-size: 12px;
+    font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 600;
+    letter-spacing: 0.08em;
+    font-weight: 700;
     color: var(--muted-text);
+    margin-bottom: 12px;
+    text-align: center;
 }
 .start-topics-grid {
     display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 800px;
+    margin: 0 auto;
 }
 .start-topic-card {
     border: 1px solid var(--panel-border);
     border-radius: 12px;
     background: var(--panel-bg);
-    padding: 12px;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    transition: all 0.2s ease;
+    text-align: center;
 }
-.start-topic-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text); }
-.start-topic-desc { font-size: 12px; color: var(--muted-text); line-height: 1.5; }
+.start-topic-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+}
+.start-topic-title { 
+    font-weight: 600; 
+    font-size: 15px; 
+    margin-bottom: 6px; 
+    color: var(--text);
+}
+.start-topic-desc { 
+    font-size: 13px; 
+    color: var(--muted-text); 
+    line-height: 1.5; 
+}
 
-/* Start screen sample prompt size */
-.sample-prompt-text { font-size: 20px; line-height: 1.6; text-align: center; color: var(--text); }
+/* Start screen sample prompt */
+.sample-prompt-text { 
+    font-size: 18px; 
+    line-height: 1.6; 
+    text-align: center; 
+    color: var(--text);
+    font-weight: 400;
+    max-width: 800px;
+    margin: 0 auto;
+}
 
 #start-mic-btn {
     width: 56px;
@@ -359,5 +394,25 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
         height: 5px;
         width: 100%;
         cursor: row-resize;
+    }
+
+    /* Stack topic cards on smaller screens */
+    .start-topics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    /* Single column on mobile */
+    .start-topics-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .hero-tagline {
+        font-size: 14px;
+    }
+    
+    .sample-prompt-text {
+        font-size: 16px;
     }
 }

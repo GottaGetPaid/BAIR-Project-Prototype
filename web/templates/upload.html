@@ -33,11 +33,9 @@
         </div>
         <div class="start-input-bar">
             <div class="start-input">
-                <button id="start-upload-btn" class="icon-btn" title="Upload JSON">📄</button>
-                <input id="start-query-input" placeholder="Ask a question or upload a JSON..." />
+                <input id="start-query-input" placeholder="Ask a question..." />
                 <button id="start-mic-btn" class="icon-btn" title="Voice input">🎤</button>
                 <button id="start-send-btn" class="send-btn">Send</button>
-                <input id="start-file-input" type="file" accept=".json,.jsonl" class="hidden" />
             </div>
         </div>
     </section>
@@ -83,25 +81,7 @@
             </form>
         </div>
 
-        <div class="form-container upload-form-container">
-            <h3>Upload a JSON or JSONL file</h3>
-            <form id="upload-form">
-                <input type="file" name="file" id="file-input" accept=".json,.jsonl">
-                <button type="submit" class="btn btn-primary">Upload</button>
-            </form>
-            <button id="save-chat-btn" class="btn" style="margin-top:10px;">Save Chat</button>
-        </div>
-
-        <div id="entry-list-container" class="hidden uploaded-entry-list">
-            <div class="section-title">Uploaded Prompts</div>
-            <div id="entry-list"></div>
-        </div>
-
-        <div id="entry-preview" class="hidden entry-preview">
-            <div class="section-title">Selected Prompt</div>
-            <div id="entry-question" class="entry-question-text"></div>
-            <button id="entry-submit-btn" class="btn submit-question-btn" disabled>Use This Prompt</button>
-        </div>
+        <button id="save-chat-btn" class="btn" style="margin-top:10px;">Save Chat</button>
     </div>
 </div>
 
@@ -151,9 +131,7 @@
     // Track conversation log for saving later
     const conversationLog = [];
     let sessionStart = new Date().toISOString();
-    let lastParsed = null;
-    let allEntries = []; // Global store for unique entries
-    let lastRawText = '';
+    let isRecording = false;
     let startSamplePrompt = '';
     let latestUserPrompt = '';
     let lastUserQueryText = '';
@@ -168,9 +146,6 @@
     const toolsModalClose = document.getElementById('tools-modal-close');
     const rawPre = document.getElementById('json-content');
     const rawBtn = document.getElementById('toggle-raw-btn');
-    const entryPreview = document.getElementById('entry-preview');
-    const entryQuestion = document.getElementById('entry-question');
-    const entrySubmitBtn = document.getElementById('entry-submit-btn');
     if (toolsFab && toolsModal && toolsModalClose) {
         toolsFab.addEventListener('click', ()=>{ toolsModal.classList.add('show'); });
         toolsModalClose.addEventListener('click', ()=>{ toolsModal.classList.remove('show'); });
@@ -261,12 +236,10 @@
         .then(r=>r.json())
         .then(data => { if (data && Array.isArray(data.topics)) buildKeywordTopicIndex(data.topics); })
         .catch(err => console.warn('Failed to load topic catalog', err));
-    // Start screen controls (send, mic, upload)
+    // Start screen controls (send, mic)
     const startQueryInput = document.getElementById('start-query-input');
     const startSendBtn = document.getElementById('start-send-btn');
     const startMicBtn = document.getElementById('start-mic-btn');
-    const startUploadBtn = document.getElementById('start-upload-btn');
-    const startFileInput = document.getElementById('start-file-input');
 
     startSendBtn?.addEventListener('click', ()=>{
         const q = (startQueryInput.value || '').trim(); if (!q) return;
@@ -296,39 +269,6 @@
             // Reset submission flag
             startIsSubmitting = false;
         }
-    });
-    startUploadBtn?.addEventListener('click', ()=> startFileInput.click());
-    startFileInput?.addEventListener('change', function(){
-        const file = this.files && this.files[0]; if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(ev){
-            lastRawText = ev.target.result || '';
-            if (rawPre) rawPre.textContent = lastRawText;
-        };
-        reader.readAsText(file);
-        const fd = new FormData(); fd.append('file', file);
-        fetch('/upload_json', { method: 'POST', body: fd })
-          .then(r=>r.json()).then(data=>{
-            if (data.error) return alert('JSON parse error: ' + data.error);
-            const entries = data.parsed_list || (data.parsed ? [data.parsed] : []);
-            if (!entries.length) return;
-            entries.forEach(newEntry => {
-                if (newEntry.id && !allEntries.some(existing => existing.id === newEntry.id)) {
-                    allEntries.push(newEntry);
-                }
-            });
-            renderEntryList();
-            transitionToMain();
-            // Auto-submit first entry
-            const first = allEntries[0];
-            if (first && first.questionText){
-                document.getElementById('query-input').value = first.questionText;
-                renderEntry(first);
-                updateLatestPromptPanel(first.questionText);
-                refreshRelatedSuggestions(first.questionText);
-                document.querySelector('#query-form button[type="submit"]').click();
-            }
-          }).catch(err=> alert('Error during backend JSON upload: ' + err));
     });
 
     // Start screen Deepgram streaming functions
@@ -508,7 +448,7 @@
                 startQueryInput.placeholder = "Submitting...";
                 startSendBtn.click();
             } else {
-                startQueryInput.placeholder = "Ask a question or upload a JSON...";
+                startQueryInput.placeholder = "Ask a question...";
                 startIsSubmitting = false; // Reset if no submission
             }
         }, 500); // Reduced delay
@@ -566,7 +506,7 @@
             console.error('Failed to stop STT session:', err);
             alert('An error occurred while finalizing transcription.');
         } finally {
-            startQueryInput.placeholder = "Ask a question or upload a JSON...";
+            startQueryInput.placeholder = "Ask a question...";
             mediaRecorder = null;
             sttSid = null;
         }
@@ -587,8 +527,6 @@
     const micBtn = document.getElementById('mic-btn');
     const queryInput = document.getElementById('query-input');
     const sendBtn = document.querySelector('#query-form button[type="submit"]');
-
-    let isRecording = false;
 
     // --- Logic for Deepgram Streaming STT ---
     let socket;
@@ -653,7 +591,6 @@
                         // Real-time transcript updates
                         queryInput.value = data.transcript;
                         
-                        // Visual feedback for interim vs final results
                         if (data.interim) {
                             queryInput.style.fontStyle = 'italic';
                             queryInput.style.opacity = '0.8';
@@ -827,79 +764,7 @@
         }
     });
 
- 
-    document.getElementById('upload-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const fileInput = document.getElementById('file-input');
-            const file = fileInput.files[0];
-
-            if (!file) {
-                alert("Please select a file.");
-                return;
-            }
-
-            //display raw json (modal)
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const rawText = event.target.result; lastRawText = rawText || '';
-                if (rawPre) rawPre.textContent = rawText;
-            };
-            reader.onerror = function(event) {
-                alert("Error reading: " + event.target.error.name);
-            };
-            reader.readAsText(file);
-
-            //send to backend for JSON parsing and UI hydration
-            const formData = new FormData();
-            formData.append('file', file);
-
-            fetch('/upload_json', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    console.error('JSON parse error:', data.error);
-                    alert('JSON parse error: ' + data.error);
-                    return;
-                }
-                console.log(data.message);
-                const entries = data.parsed_list || (data.parsed ? [data.parsed] : []);
-                if (!entries.length) return;
-
-                // Merge new entries, ensuring no duplicates based on ID
-                let newEntriesAdded = false;
-                entries.forEach(newEntry => {
-                    if (newEntry.id && !allEntries.some(existing => existing.id === newEntry.id)) {
-                        allEntries.push(newEntry);
-                        newEntriesAdded = true;
-                    }
-                });
-
-                renderEntryList();
-
-                // If this is the first upload or new entries were added,
-                // render the details of the first overall entry.
-                if (allEntries.length > 0 && newEntriesAdded) {
-                    const first = allEntries[0];
-                    renderEntry(first);
-                    if (first?.questionText) {
-                        updateLatestPromptPanel(first.questionText);
-                        refreshRelatedSuggestions(first.questionText);
-                    }
-                    // Highlight the first entry button as active
-                    const firstBtn = document.querySelector('.entry-btn');
-                    if(firstBtn) firstBtn.classList.add('active');
-                }
-            })
-            .catch(error => {
-                console.error('Error during backend JSON upload:', error);
-            });
-        });
-
-        document.getElementById('query-form').addEventListener('submit', function(e) {
+    document.getElementById('query-form').addEventListener('submit', function(e) {
             e.preventDefault();
 
             const queryInput = document.getElementById('query-input');
@@ -963,64 +828,6 @@
         });
 
         // Save chat button handler
-        function renderEntryList() {
-            const entryListContainer = document.getElementById('entry-list-container');
-            const entryList = document.getElementById('entry-list');
-            if (!entryListContainer || !entryList) return;
-            entryList.innerHTML = '';
-
-            if (allEntries.length) {
-                entryListContainer.classList.remove('hidden');
-            } else {
-                entryListContainer.classList.add('hidden');
-            }
-
-            allEntries.forEach((entry, index) => {
-                const wrapper = document.createElement('div');
-                wrapper.className = 'entry-item-wrapper';
-
-                const btn = document.createElement('button');
-                btn.textContent = entry.id || `Entry ${index + 1}`;
-                btn.className = 'btn entry-btn';
-                btn.dataset.entryId = entry.id;
-                btn.addEventListener('click', () => {
-                    renderEntry(entry);
-                    document.querySelectorAll('.entry-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                });
-                if (lastParsed && lastParsed.id === entry.id) {
-                    btn.classList.add('active');
-                }
-
-                const removeBtn = document.createElement('button');
-                removeBtn.textContent = '×';
-                removeBtn.className = 'btn-remove-entry';
-                removeBtn.title = 'Remove entry';
-                removeBtn.addEventListener('click', (e) => {
-                    e.stopPropagation(); // Prevent the main button click
-                    allEntries = allEntries.filter(e => e.id !== entry.id);
-                    renderEntryList();
-                    if (lastParsed && lastParsed.id === entry.id) {
-                        lastParsed = null;
-                        if (entryPreview) entryPreview.classList.add('hidden');
-                        if (entryQuestion) entryQuestion.textContent = '';
-                        if (entrySubmitBtn) {
-                            entrySubmitBtn.disabled = true;
-                            entrySubmitBtn.onclick = null;
-                        }
-                        if (rawPre) rawPre.textContent = '';
-                        updateLatestPromptPanel('');
-                        renderFollowupExamples([]);
-                        renderRelatedTopics([]);
-                    }
-                });
-
-                wrapper.appendChild(btn);
-                wrapper.appendChild(removeBtn);
-                entryList.appendChild(wrapper);
-            });
-        }
-
         document.getElementById('save-chat-btn').addEventListener('click', function() {
             const payload = {
                 sessionInfo: {
@@ -1031,7 +838,7 @@
                     llmModel: 'gemini-1.5-flash-latest'
                 },
                 context: {
-                    initialContent: lastParsed?.questionText || '',
+                    initialContent: latestUserPrompt || '',
                     finalContent: conversationLog.length ? conversationLog[conversationLog.length - 1].content : ''
                 },
                 conversationLog: conversationLog,
@@ -1057,44 +864,6 @@
                 alert('Save error: ' + err);
             });
         });
-
-        function renderEntry(entry) {
-            if (!entry) return;
-            lastParsed = entry;
-
-            const prompt = (entry.questionText || '').trim();
-
-            if (entryPreview && entryQuestion) {
-                entryQuestion.textContent = prompt || 'No prompt text provided.';
-                entryPreview.classList.remove('hidden');
-            }
-            if (entrySubmitBtn) {
-                if (prompt) {
-                    entrySubmitBtn.disabled = false;
-                    entrySubmitBtn.onclick = () => {
-                        const text = (entry.questionText || '').trim();
-                        if (!text) return;
-                        document.getElementById('query-input').value = text;
-                        document.querySelector('#query-form button[type="submit"]').click();
-                    };
-                } else {
-                    entrySubmitBtn.disabled = true;
-                    entrySubmitBtn.onclick = null;
-                }
-            }
-
-            updateLatestPromptPanel(prompt);
-            renderFollowupExamples([]);
-            renderRelatedTopics([]);
-            if (prompt) {
-                document.getElementById('query-input').value = prompt;
-                refreshRelatedSuggestions(prompt);
-            }
-
-            if (entry.raw && rawPre) {
-                rawPre.textContent = JSON.stringify(entry.raw, null, 2);
-            }
-        }
 
         // --- Similarity helpers (trigram + cosine) ---
         function trigramVector(text){

@@ -284,15 +284,147 @@
           }).catch(err=> alert('Error during backend JSON upload: ' + err));
     });
 
-    // Start screen mic uses same STT pipeline
-    startMicBtn?.addEventListener('click', async ()=>{
+    // Start screen Deepgram streaming functions
+    let startSocket, startMicrophone, startProcessor;
+    let startHasFinalTranscript = false;
+    
+    async function startScreenDeepgramStreaming() {
+        isRecording = true;
+        startHasFinalTranscript = false;
+        startMicBtn.classList.add('recording');
+        startQueryInput.placeholder = "🎤 Listening... Speak now!";
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            startMicrophone = stream;
+
+            const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/stt/deepgram';
+            startSocket = new WebSocket(wsUrl);
+
+            startSocket.onopen = async () => {
+                console.log('Start screen WebSocket connected for Deepgram streaming.');
+                try {
+                    let mimeType = 'audio/webm;codecs=opus';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/ogg;codecs=opus';
+                    
+                    const mediaRecorder = new MediaRecorder(startMicrophone, { 
+                        mimeType: mimeType,
+                        audioBitsPerSecond: 16000 
+                    });
+                    
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0 && startSocket.readyState === WebSocket.OPEN) {
+                            startSocket.send(event.data);
+                        }
+                    };
+                    
+                    mediaRecorder.start(250);
+                    startProcessor = mediaRecorder;
+                    
+                } catch (error) {
+                    console.error('Error setting up MediaRecorder:', error);
+                    startSocket.close();
+                }
+            };
+
+            startSocket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.transcript) {
+                        startQueryInput.value = data.transcript;
+                        console.log('[Start screen] Transcript:', data.transcript, 'Final:', !data.interim);
+                        
+                        if (data.interim) {
+                            startQueryInput.style.fontStyle = 'italic';
+                            startQueryInput.style.opacity = '0.8';
+                        } else {
+                            startQueryInput.style.fontStyle = 'normal';
+                            startQueryInput.style.opacity = '1';
+                            startHasFinalTranscript = true;
+                            
+                            // Auto-submit on final transcript - don't wait for user to click mic again
+                            console.log('[Start screen] Got final transcript, auto-submitting...');
+                            setTimeout(() => {
+                                stopStartScreenDeepgramStreaming();
+                            }, 500);
+                        }
+                    } else if (data.llm_response) {
+                        // Ignore LLM interjections on start screen
+                        console.log('[Start screen] Ignoring LLM interjection:', data.llm_response);
+                    } else if (data.error) {
+                        console.error('WebSocket error:', data.error);
+                        alert('Streaming error: ' + data.error);
+                    } else if (data.status) {
+                        console.log('WebSocket status:', data.message);
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+
+            startSocket.onclose = (event) => {
+                console.log('Start screen WebSocket closed:', event.code, event.reason);
+            };
+            
+            startSocket.onerror = (err) => {
+                console.error('Start screen WebSocket error:', err);
+                if (isRecording) {
+                    stopStartScreenDeepgramStreaming();
+                }
+            };
+
+        } catch (err) {
+            console.error('Start screen mic/WebSocket error:', err);
+            alert('Unable to access microphone or connect to streaming service: ' + err.message);
+            await stopStartScreenDeepgramStreaming();
+        }
+    }
+
+    async function stopStartScreenDeepgramStreaming() {
+        console.log('[Start screen] Stopping, has final transcript:', startHasFinalTranscript, 'Input value:', startQueryInput.value);
+        
+        // Stop audio first
+        if (startProcessor && startProcessor.stop) startProcessor.stop();
+        if (startMicrophone) startMicrophone.getTracks().forEach(track => track.stop());
+        isRecording = false;
+        startMicBtn.classList.remove('recording');
+        startQueryInput.placeholder = "Finalizing...";
+        startQueryInput.style.fontStyle = 'normal';
+        startQueryInput.style.opacity = '1';
+        
+        // Wait longer for final transcript to arrive from WebSocket before closing it
+        setTimeout(() => {
+            if (startSocket) startSocket.close();
+            startSocket = startMicrophone = startProcessor = null;
+            
+            // Auto-submit if we have text
+            const text = startQueryInput.value.trim();
+            console.log('[Start screen] Ready to submit, text:', text);
+            if (text) {
+                startQueryInput.placeholder = "Submitting...";
+                startSendBtn.click();
+            } else {
+                startQueryInput.placeholder = "Ask a question or upload a JSON...";
+            }
+        }, 800);
+    }
+    
+    // Start screen chunked recording functions
+    async function startScreenChunkedRecording() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const mimeType = chooseAudioMime();
             mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
             const res = await fetch('/stt/start', { method: 'POST' });
-            const data0 = await res.json(); if (!res.ok || !data0.stt_sid) throw new Error(data0.error || 'Failed to start STT session');
-            sttSid = data0.stt_sid; isRecording = true; startMicBtn.classList.add('recording');
+            const data0 = await res.json(); 
+            if (!res.ok || !data0.stt_sid) throw new Error(data0.error || 'Failed to start STT session');
+            sttSid = data0.stt_sid; 
+            isRecording = true; 
+            startMicBtn.classList.add('recording');
+            startQueryInput.placeholder = "Recording... Click mic to stop.";
+            
             mediaRecorder.addEventListener('dataavailable', async (e) => {
                 if (e.data && e.data.size > 0 && isRecording) {
                     const fd = new FormData();
@@ -303,15 +435,49 @@
                 }
             });
             mediaRecorder.start(2000);
-            const stopHandler = async ()=>{
-                startMicBtn.removeEventListener('click', stopHandler);
-                if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
-                isRecording = false; mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t=>t.stop());
-                startMicBtn.classList.remove('recording');
-                try { const res2 = await fetch('/stt/stop', { method: 'POST' }); const data = await res2.json(); if (data.text) { startQueryInput.value = data.text; startSendBtn.click(); } } catch {}
-            };
-            startMicBtn.addEventListener('click', stopHandler);
-        } catch (err) { alert('Unable to access microphone: ' + err.message); }
+        } catch (err) { 
+            alert('Unable to access microphone: ' + err.message); 
+        }
+    }
+    
+    async function stopStartScreenChunkedRecording() {
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+        isRecording = false; 
+        mediaRecorder.stop(); 
+        mediaRecorder.stream.getTracks().forEach(t=>t.stop());
+        startMicBtn.classList.remove('recording');
+        startQueryInput.placeholder = "Finalizing transcription...";
+        
+        try { 
+            const res2 = await fetch('/stt/stop', { method: 'POST' }); 
+            const data = await res2.json(); 
+            if (data.text) { 
+                startQueryInput.value = data.text;
+                // Auto-submit after transcription completes
+                startSendBtn.click();
+            } else if (data.error) {
+                console.error('STT error:', data.error);
+                alert('Transcription failed: ' + data.error);
+            }
+        } catch (err) {
+            console.error('Failed to stop STT session:', err);
+            alert('An error occurred while finalizing transcription.');
+        } finally {
+            startQueryInput.placeholder = "Ask a question or upload a JSON...";
+            mediaRecorder = null;
+            sttSid = null;
+        }
+    }
+    
+    // Start screen mic button - checks backend and routes appropriately
+    startMicBtn?.addEventListener('click', async ()=>{
+        if (sttBackend === 'deepgram_streaming') {
+            if (isRecording) await stopStartScreenDeepgramStreaming(); 
+            else await startScreenDeepgramStreaming();
+        } else {
+            if (isRecording) await stopStartScreenChunkedRecording(); 
+            else await startScreenChunkedRecording();
+        }
     });
     // --- Voice Input: Conditional logic for STT backend ---
     const sttBackend = '{{ stt_backend }}';

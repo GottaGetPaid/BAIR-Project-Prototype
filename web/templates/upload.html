@@ -262,6 +262,10 @@
         updateLatestPromptPanel(q);
         refreshRelatedSuggestions(q);
         document.querySelector('#query-form button[type="submit"]').click();
+        // Clear the start screen input to prevent caching
+        startQueryInput.value = '';
+        // Reset submission flag
+        startIsSubmitting = false;
     });
     
     // Add Enter key support for start screen
@@ -274,6 +278,10 @@
             updateLatestPromptPanel(q);
             refreshRelatedSuggestions(q);
             document.querySelector('#query-form button[type="submit"]').click();
+            // Clear the start screen input to prevent caching
+            startQueryInput.value = '';
+            // Reset submission flag
+            startIsSubmitting = false;
         }
     });
     startUploadBtn?.addEventListener('click', ()=> startFileInput.click());
@@ -314,6 +322,7 @@
     // Start screen Deepgram streaming functions
     let startSocket, startMicrophone, startProcessor;
     let startHasFinalTranscript = false;
+    let startIsSubmitting = false; // Flag to prevent re-recording during submission
     let startVoiceMetadata = {
         words: [],
         utterances: [],
@@ -322,8 +331,10 @@
     };
     
     async function startScreenDeepgramStreaming() {
+        if (startIsSubmitting) return; // Prevent starting during submission
         isRecording = true;
         startHasFinalTranscript = false;
+        startIsSubmitting = false;
         // Reset voice metadata
         startVoiceMetadata = {
             words: [],
@@ -443,24 +454,26 @@
     }
 
     async function stopStartScreenDeepgramStreaming() {
+        if (!isRecording) return; // Already stopped
+        
         console.log('[Start screen] Stopping, has final transcript:', startHasFinalTranscript, 'Input value:', startQueryInput.value);
         console.log('[Start screen] Voice metadata collected:', startVoiceMetadata);
         
-        // Stop audio first
+        // Stop audio immediately
         if (startProcessor && startProcessor.stop) startProcessor.stop();
         if (startMicrophone) startMicrophone.getTracks().forEach(track => track.stop());
         isRecording = false;
+        startIsSubmitting = true; // Lock to prevent re-recording
         startMicBtn.classList.remove('recording');
         startQueryInput.placeholder = "Finalizing...";
         startQueryInput.style.fontStyle = 'normal';
         startQueryInput.style.opacity = '1';
         
-        // Wait longer for final transcript to arrive from WebSocket before closing it
+        // Brief wait for final transcript, then submit
         setTimeout(() => {
             if (startSocket) startSocket.close();
             startSocket = startMicrophone = startProcessor = null;
             
-            // Auto-submit if we have text
             const text = startQueryInput.value.trim();
             console.log('[Start screen] Ready to submit, text:', text);
             
@@ -484,8 +497,9 @@
                 startSendBtn.click();
             } else {
                 startQueryInput.placeholder = "Ask a question or upload a JSON...";
+                startIsSubmitting = false; // Reset if no submission
             }
-        }, 800);
+        }, 500); // Reduced delay
     }
     
     // Start screen chunked recording functions

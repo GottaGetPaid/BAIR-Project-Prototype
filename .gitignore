@@ -3,6 +3,7 @@ venv/
 .venv/
 *.webm
 uploaded_files/
+voice_metadata/
 __pycache__/
 test-sessions/
 queries/queries.csv

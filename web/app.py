@@ -59,9 +59,11 @@ def get_whisper_model():
 UPLOAD_FOLDER = 'uploaded_files'
 QUERIES_FOLDER = 'queries'
 AUDIO_TMP = os.path.join(UPLOAD_FOLDER, 'audio_tmp')
+VOICE_METADATA_FOLDER = 'voice_metadata'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(QUERIES_FOLDER, exist_ok=True)
 os.makedirs(AUDIO_TMP, exist_ok=True)
+os.makedirs(VOICE_METADATA_FOLDER, exist_ok=True)
 REPO_ROOT = parent_dir
 TEST_SESSIONS_FOLDER = os.path.join(REPO_ROOT, 'test-sessions')
 os.makedirs(TEST_SESSIONS_FOLDER, exist_ok=True)
@@ -227,6 +229,23 @@ def _slugify(value: str) -> str:
     value = value or ''
     value = re.sub(r'[^A-Za-z0-9_.-]+', '-', value)
     return value.strip('-') or 'unknown'
+
+@app.route('/save_voice_metadata', methods=['POST'])
+def save_voice_metadata_route():
+    """Accept voice metadata from frontend and save it."""
+    try:
+        payload = request.get_json(force=True, silent=False) or {}
+        metadata = payload.get('metadata', {})
+        transcript = payload.get('transcript', '')
+        
+        filepath = _save_voice_metadata(metadata, transcript)
+        
+        if filepath:
+            return jsonify({"message": "Voice metadata saved", "path": filepath}), 200
+        else:
+            return jsonify({"error": "Failed to save metadata"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/save_chat', methods=['POST'])
 def save_chat():
@@ -420,6 +439,68 @@ def stt_stop():
                 except Exception: pass
 
 # ----------------------------
+# Voice Metadata Helper Function
+# ----------------------------
+
+def _save_voice_metadata(metadata: dict, transcript: str) -> str:
+    """Save voice metadata to a JSON file without saving audio."""
+    try:
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        filename = f"voice_metadata_{timestamp}.json"
+        filepath = os.path.join(VOICE_METADATA_FOLDER, filename)
+        
+        # Add transcript and analysis
+        full_metadata = {
+            "transcript": transcript,
+            "session_start": metadata.get('session_start'),
+            "total_duration_seconds": metadata.get('total_duration', 0.0),
+            "word_count": len(metadata.get('words', [])),
+            "utterance_count": len(metadata.get('utterances', [])),
+            "words": metadata.get('words', []),
+            "utterances": metadata.get('utterances', []),
+            "saved_at": datetime.utcnow().isoformat() + 'Z'
+        }
+        
+        # Calculate pauses (gaps between words)
+        words = metadata.get('words', [])
+        pauses = []
+        for i in range(len(words) - 1):
+            gap = words[i + 1]['start'] - words[i]['end']
+            if gap > 0.3:  # Significant pause (>300ms)
+                pauses.append({
+                    'after_word': words[i]['punctuated_word'],
+                    'before_word': words[i + 1]['punctuated_word'],
+                    'duration_seconds': gap,
+                    'timestamp': words[i]['end']
+                })
+        full_metadata['pauses'] = pauses
+        
+        # Create descriptive transcription with pause markers
+        descriptive_transcript = ""
+        for i, word_data in enumerate(words):
+            descriptive_transcript += word_data['punctuated_word']
+            if i < len(words) - 1:
+                gap = words[i + 1]['start'] - word_data['end']
+                if gap > 1.0:  # Long pause
+                    descriptive_transcript += "... "
+                elif gap > 0.5:  # Medium pause
+                    descriptive_transcript += ".. "
+                elif gap > 0.3:  # Short pause
+                    descriptive_transcript += ". "
+                else:
+                    descriptive_transcript += " "
+        full_metadata['descriptive_transcript'] = descriptive_transcript.strip()
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(full_metadata, f, ensure_ascii=False, indent=2)
+        
+        print(f"Voice metadata saved to {filepath}")
+        return filepath
+    except Exception as e:
+        print(f"Error saving voice metadata: {e}")
+        return ""
+
+# ----------------------------
 # Deepgram STT (Live) route
 # ----------------------------
 
@@ -429,6 +510,12 @@ class ConversationManager:
         self.last_speech_time = time.time()
         self.silence_threshold = 2.0  # seconds of silence before considering interjection
         self.conversation_context = []
+        self.voice_metadata = {  # Store detailed voice metadata
+            "words": [],  # word-level timestamps
+            "utterances": [],  # utterance boundaries
+            "session_start": datetime.utcnow().isoformat() + 'Z',
+            "total_duration": 0.0
+        }
         
     def should_interject(self, transcript_text, is_final):
         """Determine if the LLM should interject based on speech patterns"""
@@ -507,17 +594,47 @@ def stt_deepgram(ws):
     
     def deepgram_handler():
         try:
-            # Connect to Deepgram's streaming API
-            deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&endpointing=300"
+            # Connect to Deepgram's streaming API with word-level timestamps and utterances
+            deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&endpointing=300&utterances=true&punctuate=true&diarize=false"
             
             import websocket
             
             def on_message(ws_dg, message):
                 try:
                     data = json.loads(message)
+                    
+                    # Handle metadata messages (utterance end events)
+                    if data.get('type') == 'UtteranceEnd':
+                        # Capture utterance metadata
+                        if 'channel' in data:
+                            utterance_data = {
+                                'type': 'utterance_end',
+                                'timestamp': datetime.utcnow().isoformat() + 'Z'
+                            }
+                            conversation.voice_metadata['utterances'].append(utterance_data)
+                    
                     if 'channel' in data:
-                        transcript = data['channel']['alternatives'][0]['transcript']
+                        alternative = data['channel']['alternatives'][0]
+                        transcript = alternative.get('transcript', '')
                         is_final = data.get('is_final', False)
+                        
+                        # Extract word-level timestamps if available
+                        words_data = None
+                        if is_final and 'words' in alternative:
+                            words_data = []
+                            for word_data in alternative['words']:
+                                word_metadata = {
+                                    'word': word_data.get('word', ''),
+                                    'start': word_data.get('start', 0.0),
+                                    'end': word_data.get('end', 0.0),
+                                    'confidence': word_data.get('confidence', 0.0),
+                                    'punctuated_word': word_data.get('punctuated_word', word_data.get('word', ''))
+                                }
+                                conversation.voice_metadata['words'].append(word_metadata)
+                                words_data.append(word_metadata)
+                                # Update total duration
+                                if word_data.get('end', 0.0) > conversation.voice_metadata['total_duration']:
+                                    conversation.voice_metadata['total_duration'] = word_data.get('end', 0.0)
                         
                         if transcript:
                             # Update conversation transcript
@@ -527,16 +644,25 @@ def stt_deepgram(ws):
                                 else:
                                     conversation.transcript = transcript
                             
-                            # Send transcript to client
-                            ws.send(json.dumps({
+                            # Send transcript to client with word-level metadata
+                            message = {
                                 "transcript": conversation.transcript + (" " + transcript if not is_final else ""),
                                 "is_final": is_final,
                                 "interim": not is_final
-                            }))
+                            }
+                            
+                            # Include word-level data if available
+                            if words_data:
+                                message["words"] = words_data
+                            
+                            ws.send(json.dumps(message))
                             
                             # Check if LLM should interject
                             if conversation.should_interject(transcript, is_final):
                                 print(f"LLM interjecting based on: '{conversation.transcript}'")
+                                
+                                # Save voice metadata before responding
+                                _save_voice_metadata(conversation.voice_metadata, conversation.transcript)
                                 
                                 # Get LLM response in a separate thread to avoid blocking
                                 def get_response():
@@ -549,8 +675,14 @@ def stt_deepgram(ws):
                                             "llm_response": response,
                                             "type": "interjection"
                                         }))
-                                        # Reset transcript after response
+                                        # Reset transcript and metadata after response
                                         conversation.transcript = ""
+                                        conversation.voice_metadata = {
+                                            "words": [],
+                                            "utterances": [],
+                                            "session_start": datetime.utcnow().isoformat() + 'Z',
+                                            "total_duration": 0.0
+                                        }
                                     loop.close()
                                 
                                 threading.Thread(target=get_response, daemon=True).start()

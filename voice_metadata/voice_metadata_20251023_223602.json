@@ -1,0 +1,69 @@
+{
+  "transcript": "So can you, what's going on? What's",
+  "session_start": "2025-10-23T22:35:57.105095Z",
+  "total_duration_seconds": 3.29,
+  "word_count": 7,
+  "utterance_count": 0,
+  "words": [
+    {
+      "word": "so",
+      "start": 0.79999995,
+      "end": 1.12,
+      "confidence": 0.9941406,
+      "punctuated_word": "So"
+    },
+    {
+      "word": "can",
+      "start": 1.12,
+      "end": 1.28,
+      "confidence": 0.99316406,
+      "punctuated_word": "can"
+    },
+    {
+      "word": "you",
+      "start": 1.28,
+      "end": 1.5999999,
+      "confidence": 0.8378906,
+      "punctuated_word": "you,"
+    },
+    {
+      "word": "what's",
+      "start": 2.0,
+      "end": 2.32,
+      "confidence": 0.73339844,
+      "punctuated_word": "what's"
+    },
+    {
+      "word": "going",
+      "start": 2.32,
+      "end": 2.6399999,
+      "confidence": 0.99121094,
+      "punctuated_word": "going"
+    },
+    {
+      "word": "on",
+      "start": 2.6399999,
+      "end": 2.8,
+      "confidence": 0.99072266,
+      "punctuated_word": "on?"
+    },
+    {
+      "word": "what's",
+      "start": 2.8,
+      "end": 3.29,
+      "confidence": 0.79248047,
+      "punctuated_word": "What's"
+    }
+  ],
+  "utterances": [],
+  "saved_at": "2025-10-23T22:36:02.482637Z",
+  "pauses": [
+    {
+      "after_word": "you,",
+      "before_word": "what's",
+      "duration_seconds": 0.40000009999999997,
+      "timestamp": 1.5999999
+    }
+  ],
+  "descriptive_transcript": "So can you,. what's going on? What's"
+}

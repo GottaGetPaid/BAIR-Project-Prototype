@@ -287,10 +287,23 @@
     // Start screen Deepgram streaming functions
     let startSocket, startMicrophone, startProcessor;
     let startHasFinalTranscript = false;
+    let startVoiceMetadata = {
+        words: [],
+        utterances: [],
+        session_start: new Date().toISOString(),
+        total_duration: 0.0
+    };
     
     async function startScreenDeepgramStreaming() {
         isRecording = true;
         startHasFinalTranscript = false;
+        // Reset voice metadata
+        startVoiceMetadata = {
+            words: [],
+            utterances: [],
+            session_start: new Date().toISOString(),
+            total_duration: 0.0
+        };
         startMicBtn.classList.add('recording');
         startQueryInput.placeholder = "🎤 Listening... Speak now!";
 
@@ -332,9 +345,35 @@
                 try {
                     const data = JSON.parse(event.data);
                     
+                    // Capture utterance end events
+                    if (data.type === 'UtteranceEnd') {
+                        startVoiceMetadata.utterances.push({
+                            type: 'utterance_end',
+                            timestamp: new Date().toISOString()
+                        });
+                        console.log('[Start screen] Utterance ended');
+                    }
+                    
                     if (data.transcript) {
                         startQueryInput.value = data.transcript;
                         console.log('[Start screen] Transcript:', data.transcript, 'Final:', !data.interim);
+                        
+                        // Extract word-level metadata from backend message
+                        if (!data.interim && data.words && Array.isArray(data.words)) {
+                            console.log('[Start screen] Got word timestamps:', data.words);
+                            for (const word of data.words) {
+                                startVoiceMetadata.words.push({
+                                    word: word.word || '',
+                                    start: word.start || 0.0,
+                                    end: word.end || 0.0,
+                                    confidence: word.confidence || 0.0,
+                                    punctuated_word: word.punctuated_word || word.word || ''
+                                });
+                                if (word.end > startVoiceMetadata.total_duration) {
+                                    startVoiceMetadata.total_duration = word.end;
+                                }
+                            }
+                        }
                         
                         if (data.interim) {
                             startQueryInput.style.fontStyle = 'italic';
@@ -384,6 +423,7 @@
 
     async function stopStartScreenDeepgramStreaming() {
         console.log('[Start screen] Stopping, has final transcript:', startHasFinalTranscript, 'Input value:', startQueryInput.value);
+        console.log('[Start screen] Voice metadata collected:', startVoiceMetadata);
         
         // Stop audio first
         if (startProcessor && startProcessor.stop) startProcessor.stop();
@@ -402,6 +442,22 @@
             // Auto-submit if we have text
             const text = startQueryInput.value.trim();
             console.log('[Start screen] Ready to submit, text:', text);
+            
+            // Save voice metadata to backend
+            if (text && startVoiceMetadata.words.length > 0) {
+                console.log('[Start screen] Saving voice metadata...');
+                fetch('/save_voice_metadata', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        transcript: text,
+                        metadata: startVoiceMetadata
+                    })
+                }).then(r => r.json())
+                  .then(d => console.log('[Start screen] Voice metadata saved:', d))
+                  .catch(err => console.error('[Start screen] Failed to save metadata:', err));
+            }
+            
             if (text) {
                 startQueryInput.placeholder = "Submitting...";
                 startSendBtn.click();

@@ -19,7 +19,16 @@
             <div>
                 <div class="hero-title">Welcome to Blanca</div>
                 <div class="hero-tagline subtle">Please use the microphone to begin your prompt. Below are some of the possible topics you can ask and an example question.</div>
-                <div id="start-sample-prompt" class="sample-prompt-text subtle" style="margin-top:12px; text-align:center;"></div>
+                <div class="start-examples">
+                    <div class="start-topics-section">
+                        <div class="start-section-title subtle">Suggested topics</div>
+                        <div id="start-topics-grid" class="start-topics-grid"></div>
+                    </div>
+                    <div class="start-example-section">
+                        <div class="start-section-title subtle">Example question</div>
+                        <div id="start-sample-prompt" class="sample-prompt-text"></div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="start-input-bar">
@@ -36,36 +45,29 @@
     <!-- Main App (two panels) -->
     <div class="main-container hidden" id="main-app">
         <div class="left-panel">
-        <div class="top-bar">
-            <div class="lhs-intro">
-                <div class="title">Please continue your conversation using the microphone.</div>
-                <div class="subtle">Below are some related topics you can explore.</div>
+            <div class="top-bar">
+                <div class="lhs-intro">
+                    <div class="title">Please continue your conversation using the microphone.</div>
+                    <div class="subtle">Below are some related topics you can explore.</div>
+                </div>
+                <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
             </div>
-            <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
+
+            <div id="latest-prompt-panel" class="hidden" style="margin-top: 8px;">
+                <div class="section-title">Your Prompt</div>
+                <div id="latest-prompt-content" class="latest-prompt-callout"></div>
+            </div>
+
+            <div id="followup-panel" class="hidden" style="margin-top: 8px;">
+                <div class="section-title">Suggested Follow-ups</div>
+                <ul id="followup-list" class="followup-list"></ul>
+            </div>
+
+            <div id="related-topics-panel" class="hidden" style="margin-top: 12px;">
+                <div class="section-title">Related Topics</div>
+                <div id="related-topics-list" class="related-topics-list"></div>
+            </div>
         </div>
-        <div id="json-meta"></div>
-        <div id="entry-list-container" class="hidden">
-            <div class="section-title">JSON Entries</div>
-            <div id="entry-list"></div>
-        </div>
-
-    <div id="latest-prompt-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Your Prompt</div>
-        <div id="latest-prompt-content" class="latest-prompt-callout"></div>
-    </div>
-
-    <div id="followup-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Suggested Follow-ups</div>
-        <ul id="followup-list" class="followup-list"></ul>
-    </div>
-
-    <div id="question-display" style="margin-top: auto;"></div>
-
-    <div id="related-topics-panel" class="hidden" style="margin-top: 12px;">
-        <div class="section-title">Related Topics</div>
-        <div id="related-topics-list" class="related-topics-list"></div>
-    </div>
-    </div>
 
     <div id="resizer"></div>
 
@@ -88,6 +90,17 @@
                 <button type="submit" class="btn btn-primary">Upload</button>
             </form>
             <button id="save-chat-btn" class="btn" style="margin-top:10px;">Save Chat</button>
+        </div>
+
+        <div id="entry-list-container" class="hidden uploaded-entry-list">
+            <div class="section-title">Uploaded Prompts</div>
+            <div id="entry-list"></div>
+        </div>
+
+        <div id="entry-preview" class="hidden entry-preview">
+            <div class="section-title">Selected Prompt</div>
+            <div id="entry-question" class="entry-question-text"></div>
+            <button id="entry-submit-btn" class="btn submit-question-btn" disabled>Use This Prompt</button>
         </div>
     </div>
 </div>
@@ -155,6 +168,9 @@
     const toolsModalClose = document.getElementById('tools-modal-close');
     const rawPre = document.getElementById('json-content');
     const rawBtn = document.getElementById('toggle-raw-btn');
+    const entryPreview = document.getElementById('entry-preview');
+    const entryQuestion = document.getElementById('entry-question');
+    const entrySubmitBtn = document.getElementById('entry-submit-btn');
     if (toolsFab && toolsModal && toolsModalClose) {
         toolsFab.addEventListener('click', ()=>{ toolsModal.classList.add('show'); });
         toolsModalClose.addEventListener('click', ()=>{ toolsModal.classList.remove('show'); });
@@ -218,20 +234,26 @@
         return a.slice(0, n);
     }
     function renderStartTopics(){
-        const grid = document.getElementById('start-tool-grid');
-        if (!grid) return;
-        grid.innerHTML = '';
-        pickRandom(ALL_TOPICS, 4).forEach(t => {
-            const card = document.createElement('div');
-            card.className = 'tool-card';
-            const h4 = document.createElement('h4'); h4.textContent = t.title;
-            const p = document.createElement('p'); p.textContent = t.desc;
-            card.appendChild(h4); card.appendChild(p);
-            grid.appendChild(card);
-        });
+        const grid = document.getElementById('start-topics-grid');
+        if (grid){
+            grid.innerHTML = '';
+            pickRandom(ALL_TOPICS, 4).forEach(t => {
+                const card = document.createElement('div');
+                card.className = 'start-topic-card';
+                const title = document.createElement('div');
+                title.className = 'start-topic-title';
+                title.textContent = t.title;
+                const desc = document.createElement('div');
+                desc.className = 'start-topic-desc';
+                desc.textContent = t.desc;
+                card.appendChild(title);
+                card.appendChild(desc);
+                grid.appendChild(card);
+            });
+        }
         startSamplePrompt = pickRandom(SAMPLE_PROMPTS, 1)[0] || '';
         const sampleEl = document.getElementById('start-sample-prompt');
-        if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try: “${startSamplePrompt}”` : '';
+        if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try asking: “${startSamplePrompt}”` : '';
     }
     // Render at load
     renderStartTopics();
@@ -880,9 +902,10 @@
         function renderEntryList() {
             const entryListContainer = document.getElementById('entry-list-container');
             const entryList = document.getElementById('entry-list');
+            if (!entryListContainer || !entryList) return;
             entryList.innerHTML = '';
 
-            if (allEntries.length > 1) {
+            if (allEntries.length) {
                 entryListContainer.classList.remove('hidden');
             } else {
                 entryListContainer.classList.add('hidden');
@@ -901,6 +924,9 @@
                     document.querySelectorAll('.entry-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                 });
+                if (lastParsed && lastParsed.id === entry.id) {
+                    btn.classList.add('active');
+                }
 
                 const removeBtn = document.createElement('button');
                 removeBtn.textContent = '×';
@@ -910,12 +936,18 @@
                     e.stopPropagation(); // Prevent the main button click
                     allEntries = allEntries.filter(e => e.id !== entry.id);
                     renderEntryList();
-                    // Optional: Clear the view if the active entry was removed
                     if (lastParsed && lastParsed.id === entry.id) {
-                        document.getElementById('json-meta').innerHTML = '';
-                        document.getElementById('question-display').innerHTML = '';
-                        if (rawPre) rawPre.textContent = '';
                         lastParsed = null;
+                        if (entryPreview) entryPreview.classList.add('hidden');
+                        if (entryQuestion) entryQuestion.textContent = '';
+                        if (entrySubmitBtn) {
+                            entrySubmitBtn.disabled = true;
+                            entrySubmitBtn.onclick = null;
+                        }
+                        if (rawPre) rawPre.textContent = '';
+                        updateLatestPromptPanel('');
+                        renderFollowupExamples([]);
+                        renderRelatedTopics([]);
                     }
                 });
 
@@ -963,33 +995,41 @@
         });
 
         function renderEntry(entry) {
+            if (!entry) return;
             lastParsed = entry;
 
-            // Clear previous meta content
-            document.getElementById('json-meta').innerHTML = '';
+            const prompt = (entry.questionText || '').trim();
 
-            // Populate the new question display area at the bottom
-            const questionDiv = document.getElementById('question-display');
-            questionDiv.innerHTML = ''; // Clear previous question
-            const qP = document.createElement('p');
-            qP.innerHTML = `<strong>Question:</strong><br>${entry.questionText || ''}`;
-            questionDiv.appendChild(qP);
-
-            const submitBtn = document.createElement('button');
-            submitBtn.textContent = 'Submit Question to Chat';
-            submitBtn.className = 'btn submit-question-btn';
-            submitBtn.addEventListener('click', () => {
-                const q = (entry.questionText || '').trim();
-                if (q) {
-                    document.getElementById('query-input').value = q;
-                    document.querySelector('#query-form button[type="submit"]').click();
+            if (entryPreview && entryQuestion) {
+                entryQuestion.textContent = prompt || 'No prompt text provided.';
+                entryPreview.classList.remove('hidden');
+            }
+            if (entrySubmitBtn) {
+                if (prompt) {
+                    entrySubmitBtn.disabled = false;
+                    entrySubmitBtn.onclick = () => {
+                        const text = (entry.questionText || '').trim();
+                        if (!text) return;
+                        document.getElementById('query-input').value = text;
+                        document.querySelector('#query-form button[type="submit"]').click();
+                    };
+                } else {
+                    entrySubmitBtn.disabled = true;
+                    entrySubmitBtn.onclick = null;
                 }
-            });
-            questionDiv.appendChild(submitBtn);
+            }
 
-            // Update raw JSON view in modal if raw present
-            if (entry.raw && rawPre) { rawPre.textContent = JSON.stringify(entry.raw, null, 2); }
-            // Toolbox content removed; only conversational prompt UI remains.
+            updateLatestPromptPanel(prompt);
+            renderFollowupExamples([]);
+            renderRelatedTopics([]);
+            if (prompt) {
+                document.getElementById('query-input').value = prompt;
+                refreshRelatedSuggestions(prompt);
+            }
+
+            if (entry.raw && rawPre) {
+                rawPre.textContent = JSON.stringify(entry.raw, null, 2);
+            }
         }
 
         // --- Similarity helpers (trigram + cosine) ---

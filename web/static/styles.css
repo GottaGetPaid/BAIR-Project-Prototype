@@ -163,20 +163,23 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
 
 #entry-list {
     display: flex;
-    flex-wrap: nowrap; /* Changed from wrap */
-    overflow-x: auto;  /* Enable horizontal scroll */
-    padding-bottom: 8px; /* Add space for scrollbar */
+    flex-direction: column;
     gap: 8px;
+    max-height: 240px;
+    overflow-y: auto;
     margin-bottom: 12px;
+    padding-right: 4px;
 }
 
 .entry-item-wrapper {
     display: flex;
-    align-items: center;
-    gap: 0px; /* No gap, the buttons will touch */
+    align-items: stretch;
+    width: 100%;
 }
 
 .entry-btn {
+    flex: 1;
+    text-align: left;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
 }
@@ -187,10 +190,12 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
     border-left: none;
     color: var(--muted-text);
     cursor: pointer;
-    padding: 8px 10px;
+    padding: 0 12px;
     border-top-right-radius: 8px;
     border-bottom-right-radius: 8px;
-    line-height: 1.5; /* Match .btn */
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-remove-entry:hover {
@@ -236,7 +241,7 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
     box-shadow: 0 1px 0 rgba(0,0,0,0.04);
 }
 .latest-prompt-callout::before {
-    content: 'Your prompt';
+    content: 'Your most recent prompt';
     display: block; /* put on its own line */
     font-size: 12px; /* slightly larger */
     font-weight: 600;
@@ -246,8 +251,38 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
     letter-spacing: 0.04em;
 }
 
+/* Start screen examples */
+.start-examples {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+}
+.start-section-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--muted-text);
+}
+.start-topics-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.start-topic-card {
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    background: var(--panel-bg);
+    padding: 12px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+.start-topic-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; color: var(--text); }
+.start-topic-desc { font-size: 12px; color: var(--muted-text); line-height: 1.5; }
+
 /* Start screen sample prompt size */
-.sample-prompt-text { font-size: 20px; line-height: 1.6; }
+.sample-prompt-text { font-size: 20px; line-height: 1.6; text-align: center; color: var(--text); }
 
 #start-mic-btn {
     width: 56px;
@@ -273,6 +308,27 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
     border-radius: 8px;
     padding: 8px 10px;
     font-size: 13px;
+    color: var(--text);
+}
+
+.uploaded-entry-list { margin-top: 20px; }
+.entry-preview {
+    margin-top: 16px;
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 12px;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.entry-question-text {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 14px;
+    line-height: 1.5;
     color: var(--text);
 }
 

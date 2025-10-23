@@ -19,8 +19,16 @@
             <div>
                 <div class="hero-title">Welcome to Blanca</div>
                 <div class="hero-tagline subtle">Please use the microphone to begin your prompt. Below are some of the possible topics you can ask and an example question.</div>
-                <div id="start-tool-grid" class="tool-grid"></div>
-                <div id="start-sample-prompt" class="sample-prompt-text subtle" style="margin-top:12px; text-align:center;"></div>
+                <div class="start-examples">
+                    <div class="start-topics-section">
+                        <div class="start-section-title subtle">Suggested topics</div>
+                        <div id="start-topics-grid" class="start-topics-grid"></div>
+                    </div>
+                    <div class="start-example-section">
+                        <div class="start-section-title subtle">Example question</div>
+                        <div id="start-sample-prompt" class="sample-prompt-text"></div>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="start-input-bar">
@@ -37,43 +45,29 @@
     <!-- Main App (two panels) -->
     <div class="main-container hidden" id="main-app">
         <div class="left-panel">
-        <div class="top-bar">
-            <div class="lhs-intro">
-                <div class="title">Please continue your conversation using the microphone.</div>
-                <div class="subtle">Below are some related topics you can explore.</div>
+            <div class="top-bar">
+                <div class="lhs-intro">
+                    <div class="title">Please continue your conversation using the microphone.</div>
+                    <div class="subtle">Below are some related topics you can explore.</div>
+                </div>
+                <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
             </div>
-            <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
+
+            <div id="latest-prompt-panel" class="hidden" style="margin-top: 8px;">
+                <div class="section-title">Your Prompt</div>
+                <div id="latest-prompt-content" class="latest-prompt-callout"></div>
+            </div>
+
+            <div id="followup-panel" class="hidden" style="margin-top: 8px;">
+                <div class="section-title">Suggested Follow-ups</div>
+                <ul id="followup-list" class="followup-list"></ul>
+            </div>
+
+            <div id="related-topics-panel" class="hidden" style="margin-top: 12px;">
+                <div class="section-title">Related Topics</div>
+                <div id="related-topics-list" class="related-topics-list"></div>
+            </div>
         </div>
-        <div id="json-meta"></div>
-        <div id="entry-list-container" class="hidden">
-            <div class="section-title">JSON Entries</div>
-            <div id="entry-list"></div>
-        </div>
-
-    <div id="function-ideas-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Function Ideas</div>
-        <div id="function-ideas-grid" class="function-ideas-grid"></div>
-    </div>
-
-    <div id="latest-prompt-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Your Prompt</div>
-        <div id="latest-prompt-content" class="latest-prompt-callout"></div>
-    </div>
-
-    <div id="followup-panel" class="hidden" style="margin-top: 8px;">
-        <div class="section-title">Suggested Follow-ups</div>
-        <ul id="followup-list" class="followup-list"></ul>
-    </div>
-
-    <div id="question-display" style="margin-top: auto;"></div>
-    <div class="section-title inline-controls"><span>Tools</span></div>
-    <div id="toolbox-view-left"></div>
-
-    <div id="related-topics-panel" class="hidden" style="margin-top: 12px;">
-        <div class="section-title">Related Topics</div>
-        <div id="related-topics-list" class="related-topics-list"></div>
-    </div>
-    </div>
 
     <div id="resizer"></div>
 
@@ -96,6 +90,17 @@
                 <button type="submit" class="btn btn-primary">Upload</button>
             </form>
             <button id="save-chat-btn" class="btn" style="margin-top:10px;">Save Chat</button>
+        </div>
+
+        <div id="entry-list-container" class="hidden uploaded-entry-list">
+            <div class="section-title">Uploaded Prompts</div>
+            <div id="entry-list"></div>
+        </div>
+
+        <div id="entry-preview" class="hidden entry-preview">
+            <div class="section-title">Selected Prompt</div>
+            <div id="entry-question" class="entry-question-text"></div>
+            <button id="entry-submit-btn" class="btn submit-question-btn" disabled>Use This Prompt</button>
         </div>
     </div>
 </div>
@@ -149,7 +154,6 @@
     let lastParsed = null;
     let allEntries = []; // Global store for unique entries
     let lastRawText = '';
-    let functionIndex = []; // flattened functions with vectors for similarity
     let startSamplePrompt = '';
     let latestUserPrompt = '';
     let lastUserQueryText = '';
@@ -164,6 +168,9 @@
     const toolsModalClose = document.getElementById('tools-modal-close');
     const rawPre = document.getElementById('json-content');
     const rawBtn = document.getElementById('toggle-raw-btn');
+    const entryPreview = document.getElementById('entry-preview');
+    const entryQuestion = document.getElementById('entry-question');
+    const entrySubmitBtn = document.getElementById('entry-submit-btn');
     if (toolsFab && toolsModal && toolsModalClose) {
         toolsFab.addEventListener('click', ()=>{ toolsModal.classList.add('show'); });
         toolsModalClose.addEventListener('click', ()=>{ toolsModal.classList.remove('show'); });
@@ -227,20 +234,26 @@
         return a.slice(0, n);
     }
     function renderStartTopics(){
-        const grid = document.getElementById('start-tool-grid');
-        if (!grid) return;
-        grid.innerHTML = '';
-        pickRandom(ALL_TOPICS, 4).forEach(t => {
-            const card = document.createElement('div');
-            card.className = 'tool-card';
-            const h4 = document.createElement('h4'); h4.textContent = t.title;
-            const p = document.createElement('p'); p.textContent = t.desc;
-            card.appendChild(h4); card.appendChild(p);
-            grid.appendChild(card);
-        });
+        const grid = document.getElementById('start-topics-grid');
+        if (grid){
+            grid.innerHTML = '';
+            pickRandom(ALL_TOPICS, 4).forEach(t => {
+                const card = document.createElement('div');
+                card.className = 'start-topic-card';
+                const title = document.createElement('div');
+                title.className = 'start-topic-title';
+                title.textContent = t.title;
+                const desc = document.createElement('div');
+                desc.className = 'start-topic-desc';
+                desc.textContent = t.desc;
+                card.appendChild(title);
+                card.appendChild(desc);
+                grid.appendChild(card);
+            });
+        }
         startSamplePrompt = pickRandom(SAMPLE_PROMPTS, 1)[0] || '';
         const sampleEl = document.getElementById('start-sample-prompt');
-        if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try: “${startSamplePrompt}”` : '';
+        if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try asking: “${startSamplePrompt}”` : '';
     }
     // Render at load
     renderStartTopics();
@@ -305,7 +318,6 @@
                 }
             });
             renderEntryList();
-            renderToolboxView();
             transitionToMain();
             // Auto-submit first entry
             const first = allEntries[0];
@@ -867,7 +879,6 @@
                 });
 
                 renderEntryList();
-                renderToolboxView(); // Render tools to the left panel
 
                 // If this is the first upload or new entries were added,
                 // render the details of the first overall entry.
@@ -955,9 +966,10 @@
         function renderEntryList() {
             const entryListContainer = document.getElementById('entry-list-container');
             const entryList = document.getElementById('entry-list');
+            if (!entryListContainer || !entryList) return;
             entryList.innerHTML = '';
 
-            if (allEntries.length > 1) {
+            if (allEntries.length) {
                 entryListContainer.classList.remove('hidden');
             } else {
                 entryListContainer.classList.add('hidden');
@@ -976,6 +988,9 @@
                     document.querySelectorAll('.entry-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                 });
+                if (lastParsed && lastParsed.id === entry.id) {
+                    btn.classList.add('active');
+                }
 
                 const removeBtn = document.createElement('button');
                 removeBtn.textContent = '×';
@@ -985,13 +1000,18 @@
                     e.stopPropagation(); // Prevent the main button click
                     allEntries = allEntries.filter(e => e.id !== entry.id);
                     renderEntryList();
-                    renderToolboxView(); // Re-render tools in left panel
-                    // Optional: Clear the view if the active entry was removed
                     if (lastParsed && lastParsed.id === entry.id) {
-                        document.getElementById('json-meta').innerHTML = '';
-                        document.getElementById('question-display').innerHTML = '';
-                        if (rawPre) rawPre.textContent = '';
                         lastParsed = null;
+                        if (entryPreview) entryPreview.classList.add('hidden');
+                        if (entryQuestion) entryQuestion.textContent = '';
+                        if (entrySubmitBtn) {
+                            entrySubmitBtn.disabled = true;
+                            entrySubmitBtn.onclick = null;
+                        }
+                        if (rawPre) rawPre.textContent = '';
+                        updateLatestPromptPanel('');
+                        renderFollowupExamples([]);
+                        renderRelatedTopics([]);
                     }
                 });
 
@@ -1039,117 +1059,41 @@
         });
 
         function renderEntry(entry) {
+            if (!entry) return;
             lastParsed = entry;
 
-            // Clear previous meta content
-            document.getElementById('json-meta').innerHTML = '';
+            const prompt = (entry.questionText || '').trim();
 
-            // Populate the new question display area at the bottom
-            const questionDiv = document.getElementById('question-display');
-            questionDiv.innerHTML = ''; // Clear previous question
-            const qP = document.createElement('p');
-            qP.innerHTML = `<strong>Question:</strong><br>${entry.questionText || ''}`;
-            questionDiv.appendChild(qP);
-
-            const submitBtn = document.createElement('button');
-            submitBtn.textContent = 'Submit Question to Chat';
-            submitBtn.className = 'btn submit-question-btn';
-            submitBtn.addEventListener('click', () => {
-                const q = (entry.questionText || '').trim();
-                if (q) {
-                    document.getElementById('query-input').value = q;
-                    document.querySelector('#query-form button[type="submit"]').click();
-                }
-            });
-            questionDiv.appendChild(submitBtn);
-
-            // Update raw JSON view in modal if raw present
-            if (entry.raw && rawPre) { rawPre.textContent = JSON.stringify(entry.raw, null, 2); }
-            // The toolbox is now global and does not need to be re-rendered on entry selection.
-        }
-
-        function renderToolboxView(){
-            const functions = [];
-            allEntries.forEach(entry => {
-                (entry.functions || []).forEach(func => {
-                    functions.push({ ...func, entryId: entry.id });
-                });
-            });
-
-            // Build function index with vectors for similarity
-            functionIndex = functions.map(fn => {
-                const full = (fn.name || '').trim();
-                let toolbox = 'misc';
-                let tool = full || '(unnamed)';
-                if (full.includes('.')){
-                    const idx = full.indexOf('.');
-                    toolbox = full.slice(0, idx) || 'misc';
-                    tool = full.slice(idx+1) || '(unnamed)';
-                }
-                const paramNames = [];
-                try {
-                    const params = fn.parameters || {};
-                    if (params && params.properties) {
-                        for (const k of Object.keys(params.properties)) paramNames.push(k);
-                    }
-                } catch {}
-                const text = [full, fn.description || '', paramNames.join(' ')].join(' ').toLowerCase();
-                return {
-                    fullName: full,
-                    toolbox,
-                    tool,
-                    desc: fn.description || '',
-                    params: fn.parameters,
-                    entryId: fn.entryId,
-                    triVector: trigramVector(text),
-                    wordVector: wordVector(text),
-                    tokens: new Set(text.split(/[^a-z0-9]+/).filter(Boolean))
-                };
-            });
-
-            const container = document.getElementById('toolbox-view-left');
-            container.innerHTML = '';
-            if (!functions || !functions.length){
-                const p = document.createElement('p'); p.className = 'subtle'; p.textContent = 'No tools found in JSON.'; container.appendChild(p); return;
+            if (entryPreview && entryQuestion) {
+                entryQuestion.textContent = prompt || 'No prompt text provided.';
+                entryPreview.classList.remove('hidden');
             }
-            const groups = {};
-            for (const fi of functionIndex){
-                if (!groups[fi.toolbox]) groups[fi.toolbox] = [];
-                groups[fi.toolbox].push({ tool: fi.tool, desc: fi.desc, params: fi.params, entryId: fi.entryId });
+            if (entrySubmitBtn) {
+                if (prompt) {
+                    entrySubmitBtn.disabled = false;
+                    entrySubmitBtn.onclick = () => {
+                        const text = (entry.questionText || '').trim();
+                        if (!text) return;
+                        document.getElementById('query-input').value = text;
+                        document.querySelector('#query-form button[type="submit"]').click();
+                    };
+                } else {
+                    entrySubmitBtn.disabled = true;
+                    entrySubmitBtn.onclick = null;
+                }
             }
 
-            const toolboxNames = Object.keys(groups).sort((a,b)=>a.localeCompare(b));
-            for (const name of toolboxNames){
-                const items = groups[name];
-                const details = document.createElement('details');
-                details.className = 'toolbox';
-                const summary = document.createElement('summary');
-                summary.innerHTML = `${name} <span class="badge">${items.length}</span>`;
-                details.appendChild(summary);
-                const ul = document.createElement('ul');
-                ul.className = 'tool-list';
-                for (const it of items){
-                    const li = document.createElement('li');
-                    const d = document.createElement('details'); d.className = 'tool';
-                    const s = document.createElement('summary'); 
-                    s.textContent = it.tool;
-
-                    const entryIdSpan = document.createElement('span');
-                    entryIdSpan.className = 'tool-entry-id';
-                    entryIdSpan.textContent = it.entryId || '';
-                    s.appendChild(entryIdSpan);
-
-                    d.appendChild(s);
-                    if (it.desc){ const desc = document.createElement('div'); desc.className = 'tool-desc'; desc.textContent = it.desc; d.appendChild(desc); }
-                    if (it.params){ const pre = document.createElement('pre'); pre.className = 'tool-params'; pre.textContent = JSON.stringify(it.params, null, 2); d.appendChild(pre); }
-                    li.appendChild(d);
-                    ul.appendChild(li);
-                }
-                details.appendChild(ul);
-                container.appendChild(details);
+            updateLatestPromptPanel(prompt);
+            renderFollowupExamples([]);
+            renderRelatedTopics([]);
+            if (prompt) {
+                document.getElementById('query-input').value = prompt;
+                refreshRelatedSuggestions(prompt);
             }
-            // Render function ideas
-            renderFunctionIdeas();
+
+            if (entry.raw && rawPre) {
+                rawPre.textContent = JSON.stringify(entry.raw, null, 2);
+            }
         }
 
         // --- Similarity helpers (trigram + cosine) ---
@@ -1178,23 +1122,6 @@
             for (const [k,w] of smaller){ const w2 = other.get(k)||0; if (w2) dot += w*w2; }
             if (!norm1 || !norm2) return 0;
             return dot / (Math.sqrt(norm1)*Math.sqrt(norm2));
-        }
-        function renderFunctionIdeas(){
-            const panel = document.getElementById('function-ideas-panel');
-            const grid = document.getElementById('function-ideas-grid');
-            if (!functionIndex.length){ panel.classList.add('hidden'); grid.innerHTML=''; return; }
-            const n = Math.min(functionIndex.length, Math.floor(Math.random()*2)+4); // 4 or 5
-            const picks = pickRandom(functionIndex, n);
-            grid.innerHTML = '';
-            for (const fi of picks){
-                const card = document.createElement('div');
-                card.className = 'function-idea-card';
-                const title = document.createElement('div'); title.className = 'function-idea-title'; title.textContent = `${fi.toolbox}.${fi.tool}`;
-                const desc = document.createElement('div'); desc.className = 'function-idea-desc'; desc.textContent = fi.desc || '';
-                card.appendChild(title); card.appendChild(desc);
-                grid.appendChild(card);
-            }
-            panel.classList.remove('hidden');
         }
         function buildKeywordTopicIndex(topics){
             if (!Array.isArray(topics)) return;

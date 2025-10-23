@@ -87,8 +87,7 @@ startFileInput?.addEventListener('change', function(){
                 allEntries.push(newEntry);
             }
         });
-        renderEntryList();
-        renderToolboxView();
+    renderEntryList();
         transitionToMain();
         // Auto-submit first entry
         const first = allEntries[0];
@@ -425,7 +424,6 @@ document.getElementById('upload-form')?.addEventListener('submit', function(e) {
             });
 
             renderEntryList();
-            renderToolboxView(); // Render tools to the left panel
 
             // If this is the first upload or new entries were added,
             // render the details of the first overall entry.
@@ -533,7 +531,6 @@ function renderEntryList() {
             e.stopPropagation(); // Prevent the main button click
             allEntries = allEntries.filter(e => e.id !== entry.id);
             renderEntryList();
-            renderToolboxView(); // Re-render tools in left panel
             // Optional: Clear the view if the active entry was removed
             if (lastParsed && lastParsed.id === entry.id) {
                 document.getElementById('json-meta').innerHTML = '';
@@ -613,7 +610,6 @@ function renderEntry(entry) {
 
     // Update raw JSON view in modal if raw present
     if (entry.raw) { rawPre.textContent = JSON.stringify(entry.raw, null, 2); }
-    // The toolbox is now global and does not need to be re-rendered on entry selection.
 }
 
 const submitAction = async (action) => {
@@ -661,67 +657,4 @@ console.error('Failed to parse actions data:', e);
 }
 }
 });
-
-function renderToolboxView(){
-    const container = document.getElementById('toolbox-view-left');
-    if (!container) return;
-    container.innerHTML = '';
-
-    const functions = [];
-    allEntries.forEach(entry => {
-        (entry.functions || []).forEach(func => {
-            functions.push({ ...func, entryId: entry.id });
-        });
-    });
-
-    if (!functions.length) {
-        container.innerHTML = '<p>No tools found in the uploaded JSON(s).</p>';
-        return;
-    }
-
-    const toolbox = document.createElement('details');
-    toolbox.className = 'toolbox';
-    toolbox.open = true;
-
-    const summary = document.createElement('summary');
-    summary.textContent = 'Available Tools';
-    const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = functions.length;
-    summary.appendChild(badge);
-    toolbox.appendChild(summary);
-
-    const ul = document.createElement('ul');
-    ul.className = 'tool-list';
-
-    functions.forEach(func => {
-        const li = document.createElement('li');
-        const toolDetails = document.createElement('details');
-        toolDetails.className = 'tool';
-
-        const toolSummary = document.createElement('summary');
-        toolSummary.innerHTML = `<span>${func.name}</span> <span class="tool-entry-id">${func.entryId}</span>`;
-        toolDetails.appendChild(toolSummary);
-
-        if (func.description) {
-            const desc = document.createElement('div');
-            desc.className = 'tool-desc';
-            desc.textContent = func.description;
-            toolDetails.appendChild(desc);
-        }
-
-        if (func.parameters && func.parameters.properties) {
-            const pre = document.createElement('pre');
-            pre.className = 'tool-params';
-            pre.textContent = JSON.stringify(func.parameters.properties, null, 2);
-            toolDetails.appendChild(pre);
-        }
-
-        li.appendChild(toolDetails);
-        ul.appendChild(li);
-    });
-
-    toolbox.appendChild(ul);
-    container.appendChild(toolbox);
-}
 

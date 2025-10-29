@@ -290,6 +290,10 @@ def _llm_related_topics(prompt: str) -> dict | None:
 def index():
     return render_template("upload.html", stt_backend=AppConfig.STT_BACKEND)
 
+@app.route("/test")
+def test_mic():
+    return render_template("test_mic.html")
+
 # Your existing /upload and /query routes are fine...
 @app.route('/upload', methods=['POST'])
 def upload():
@@ -453,6 +457,57 @@ def related_topics():
 
     topics = _score_topics(prompt)
     return jsonify({"topics": topics, "followUps": [], "source": "fallback"}), 200
+
+@app.route('/get_bfcl_tools', methods=['GET'])
+def get_bfcl_tools():
+    """Load BFCL tools from queries folder and return sample tools with example question."""
+    import random
+    
+    bfcl_path = os.path.join(parent_dir, 'queries', 'BFCL_multiple.jsonl')
+    
+    if not os.path.exists(bfcl_path):
+        return jsonify({"tools": [], "exampleQuestion": "", "error": "BFCL file not found"}), 404
+    
+    try:
+        # Load all entries from BFCL
+        entries = []
+        with open(bfcl_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    entries.append(json.loads(line))
+        
+        if not entries:
+            return jsonify({"tools": [], "exampleQuestion": ""}), 200
+        
+        # Pick a random entry to get example question and tools
+        selected_entry = random.choice(entries)
+        
+        # Extract example question
+        example_question = ""
+        if selected_entry.get('question') and len(selected_entry['question']) > 0:
+            if len(selected_entry['question'][0]) > 0:
+                example_question = selected_entry['question'][0][0].get('content', '')
+        
+        # Extract tools/functions
+        tools = []
+        if selected_entry.get('function'):
+            for func in selected_entry['function'][:3]:  # Limit to 3 tools
+                tool_info = {
+                    "name": func.get('name', 'Unknown'),
+                    "description": func.get('description', ''),
+                    "parameters": func.get('parameters', {})
+                }
+                tools.append(tool_info)
+        
+        return jsonify({
+            "tools": tools,
+            "exampleQuestion": example_question,
+            "entryId": selected_entry.get('id', '')
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"tools": [], "exampleQuestion": "", "error": str(e)}), 500
 
 # ----------------------------
 # Save chat route
@@ -737,7 +792,7 @@ def _save_voice_metadata(metadata: dict, transcript: str) -> str:
             json.dump(full_metadata, f, ensure_ascii=False, indent=2)
         
         print(f"Voice metadata saved to {filepath}")
-        return filepath
+        return descriptive_transcript.strip()  # Return descriptive transcript instead of filepath
     except Exception as e:
         print(f"Error saving voice metadata: {e}")
         return ""
@@ -834,10 +889,15 @@ def stt_deepgram(ws):
     # Create a thread to handle the Deepgram connection
     import threading
     
+    # Event to signal when Deepgram connection is ready
+    deepgram_ready = threading.Event()
+    
     def deepgram_handler():
         try:
             # Connect to Deepgram's streaming API with word-level timestamps and utterances
-            deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&endpointing=300&utterances=true&punctuate=true&diarize=false"
+            # filler_words=true captures "uh", "um", etc.
+            # disfluencies=true captures stutters and repetitions
+            deepgram_url = f"wss://api.deepgram.com/v1/listen?model=nova-2&language=en-US&smart_format=true&interim_results=true&endpointing=300&utterances=true&punctuate=true&diarize=false&filler_words=true&disfluencies=true"
             
             import websocket
             
@@ -879,6 +939,10 @@ def stt_deepgram(ws):
                                     conversation.voice_metadata['total_duration'] = word_data.get('end', 0.0)
                         
                         if transcript:
+                            # Log filler words and disfluencies for debugging
+                            if any(filler in transcript.lower() for filler in ['uh', 'um', 'hmm', 'ah', 'er']):
+                                print(f"📝 Filler words detected: {transcript}")
+                            
                             # Update conversation transcript
                             if is_final:
                                 if conversation.transcript:
@@ -899,39 +963,10 @@ def stt_deepgram(ws):
                             
                             ws.send(json.dumps(message))
                             
-                            # Check if LLM should interject
-                            if conversation.should_interject(transcript, is_final):
-                                print(f"LLM interjecting based on: '{conversation.transcript}'")
-                                
-                                # Save voice metadata before responding
-                                _save_voice_metadata(conversation.voice_metadata, conversation.transcript)
-                                
-                                # Capture current transcript for the LLM response
-                                current_transcript = conversation.transcript
-                                
-                                # Reset transcript and metadata IMMEDIATELY to prevent accumulation
-                                conversation.transcript = ""
-                                conversation.voice_metadata = {
-                                    "words": [],
-                                    "utterances": [],
-                                    "session_start": datetime.utcnow().isoformat() + 'Z',
-                                    "total_duration": 0.0
-                                }
-                                
-                                # Get LLM response in a separate thread to avoid blocking
-                                def get_response():
-                                    import asyncio
-                                    loop = asyncio.new_event_loop()
-                                    asyncio.set_event_loop(loop)
-                                    response = loop.run_until_complete(conversation.get_llm_response(current_transcript))
-                                    if response:
-                                        ws.send(json.dumps({
-                                            "llm_response": response,
-                                            "type": "interjection"
-                                        }))
-                                    loop.close()
-                                
-                                threading.Thread(target=get_response, daemon=True).start()
+                            # DISABLED: Automatic interjection - now using manual control
+                            # User will press mic button again to send prompt
+                            # if conversation.should_interject(transcript, is_final):
+                            #     ... automatic response logic ...
                                 
                 except Exception as e:
                     print(f"Deepgram message error: {e}")
@@ -944,6 +979,7 @@ def stt_deepgram(ws):
             
             def on_open(ws_dg):
                 print("Connected to Deepgram")
+                deepgram_ready.set()  # Signal that connection is ready
                 ws.send(json.dumps({"status": "connected", "message": "Real-time transcription with AI interjection ready"}))
             
             # Create Deepgram WebSocket connection
@@ -959,15 +995,79 @@ def stt_deepgram(ws):
             # Forward audio from client to Deepgram
             def forward_audio():
                 try:
+                    # Wait for Deepgram connection to be ready (with timeout)
+                    if not deepgram_ready.wait(timeout=10):
+                        print("Deepgram connection timeout")
+                        return
+                    
+                    print("Starting audio forwarding loop...")
                     while True:
-                        data = ws.receive()
-                        if data and deepgram_ws.sock and deepgram_ws.sock.connected:
-                            deepgram_ws.send(data, websocket.ABNF.OPCODE_BINARY)
-                        else:
-                            break
+                        try:
+                            # Use timeout to avoid blocking forever
+                            data = ws.receive(timeout=30)  # 30 second timeout for receiving data
+                            if data is None:
+                                print("Received None from client WebSocket, ending forwarding")
+                                break
+                            
+                            # Handle control messages (text/JSON)
+                            if isinstance(data, str):
+                                try:
+                                    control_msg = json.loads(data)
+                                    if control_msg.get('action') == 'finalize':
+                                        print(f"User manually finalized prompt: '{conversation.transcript}'")
+                                        
+                                        # Save voice metadata and get descriptive transcript
+                                        descriptive_transcript = _save_voice_metadata(conversation.voice_metadata, conversation.transcript)
+                                        current_transcript = conversation.transcript
+                                        
+                                        # Reset for next prompt
+                                        conversation.transcript = ""
+                                        conversation.voice_metadata = {
+                                            "words": [],
+                                            "utterances": [],
+                                            "session_start": datetime.utcnow().isoformat() + 'Z',
+                                            "total_duration": 0.0
+                                        }
+                                        
+                                        # Get LLM response
+                                        def get_response():
+                                            import asyncio
+                                            loop = asyncio.new_event_loop()
+                                            asyncio.set_event_loop(loop)
+                                            response = loop.run_until_complete(conversation.get_llm_response(current_transcript))
+                                            if response:
+                                                try:
+                                                    ws.send(json.dumps({
+                                                        "llm_response": response,
+                                                        "user_transcript": descriptive_transcript or current_transcript,
+                                                        "type": "manual_submit"
+                                                    }))
+                                                    print(f"✓ Sent LLM response successfully")
+                                                except Exception as e:
+                                                    print(f"Failed to send LLM response (connection may be closed): {e}")
+                                            loop.close()
+                                        
+                                        threading.Thread(target=get_response, daemon=True).start()
+                                except json.JSONDecodeError:
+                                    print(f"Invalid control message: {data}")
+                            
+                            # Handle audio data (binary)
+                            elif isinstance(data, bytes):
+                                if deepgram_ws.sock and deepgram_ws.sock.connected:
+                                    deepgram_ws.send(data, websocket.ABNF.OPCODE_BINARY)
+                                else:
+                                    print("Deepgram socket not connected")
+                                    break
+                        except Exception as e:
+                            # Check if it's just a timeout or actual error
+                            if "timeout" in str(e).lower():
+                                continue  # Keep waiting for data
+                            else:
+                                raise
                 except Exception as e:
                     print(f"Audio forwarding error: {e}")
                 finally:
+                    print("Closing Deepgram WebSocket")
                     deepgram_ws.close()
             
             # Start audio forwarding in a separate thread

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mic Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        #micBtn { width: 200px; height: 200px; border-radius: 50%; background: purple; color: white; border: none; cursor: pointer; font-size: 24px; }
+        #micBtn.recording { background: red; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+        #status { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Microphone Test</h1>
+    <button id="micBtn">Click to Test</button>
+    <div id="status">Status: Ready</div>
+    
+    <script>
+        const micBtn = document.getElementById('micBtn');
+        const status = document.getElementById('status');
+        let isRecording = false;
+        
+        function log(msg) {
+            console.log(msg);
+            status.innerHTML += '<br>' + msg;
+        }
+        
+        micBtn.addEventListener('click', async () => {
+            log('Button clicked!');
+            
+            if (isRecording) {
+                log('Stopping recording...');
+                isRecording = false;
+                micBtn.classList.remove('recording');
+                micBtn.textContent = 'Click to Test';
+                return;
+            }
+            
+            try {
+                log('Requesting microphone...');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                log('✓ Microphone granted');
+                
+                isRecording = true;
+                micBtn.classList.add('recording');
+                micBtn.textContent = 'Recording...';
+                
+                log('Creating MediaRecorder...');
+                const recorder = new MediaRecorder(stream);
+                
+                recorder.ondataavailable = (e) => {
+                    log('Got audio data: ' + e.data.size + ' bytes');
+                };
+                
+                recorder.start(250);
+                log('✓ Recording started');
+                
+            } catch (err) {
+                log('❌ Error: ' + err.message);
+            }
+        });
+    </script>
+</body>
+</html>

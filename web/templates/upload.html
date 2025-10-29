@@ -4,13 +4,77 @@
     <meta charset="UTF-8">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    
+    <style>
+        .mic-btn-large {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Dark mode styling */
+        @media (prefers-color-scheme: dark) {
+            .mic-btn-large {
+                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                box-shadow: 0 4px 15px rgba(59, 130, 246, 0.5);
+            }
+        }
+        
+        .mic-btn-large:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+        }
+        
+        .mic-btn-large:active {
+            transform: scale(0.95);
+        }
+        
+        .mic-btn-large.recording {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1.5s infinite;
+        }
+        
+        .voice-level-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 60%;
+            height: 60%;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.4);
+            opacity: 0;
+            transition: transform 0.03s ease-out, opacity 0.3s ease;
+            transform: translate(-50%, -50%) scale(0.3);
+            transform-origin: center;
+        }
+        
+        .mic-btn-large.recording .voice-level-indicator {
+            opacity: 1;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+            }
+            50% {
+                box-shadow: 0 4px 25px rgba(245, 87, 108, 0.8);
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- Disclaimer Banner -->
     <div class="disclaimer-banner"><strong>Your voice will be recorded for training purposes.</strong></div>
-    <!-- Start Screen -->
-    <section id="start-screen">
+    <!-- Start Screen (hidden by default) -->
+    <section id="start-screen" style="display:none;">
         <div class="top-bar" style="padding: 12px 16px;">
             <div></div>
             <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
@@ -41,19 +105,28 @@
     </section>
 
     <!-- Main App (two panels) -->
-    <div class="main-container hidden" id="main-app">
+    <div class="main-container" id="main-app">
         <div class="left-panel">
             <div class="top-bar">
                 <div class="lhs-intro">
-                    <div class="title">Please continue your conversation using the microphone.</div>
-                    <div class="subtle">Below are some related topics you can explore.</div>
+                    <div class="title">Welcome to Blanca</div>
+                    <div class="subtle">Below are the tools available and an example question to get started.</div>
                 </div>
                 <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
             </div>
 
-            <div id="latest-prompt-panel" class="hidden" style="margin-top: 8px;">
-                <div class="section-title">Your Prompt</div>
-                <div id="latest-prompt-content" class="latest-prompt-callout"></div>
+            <div id="tools-panel" style="margin-top: 8px;">
+                <div class="section-title">Available Tools</div>
+                <div id="tools-list" class="tools-list">
+                    <p class="subtle" style="padding: 8px;">Loading tools...</p>
+                </div>
+            </div>
+
+            <div id="example-question-panel" style="margin-top: 12px;">
+                <div class="section-title">Example Question</div>
+                <div id="example-question-content" class="sample-prompt-text" style="padding: 12px; background: var(--color-surface-light); border-radius: 8px; font-style: italic; font-size: 13px;">
+                    <p class="subtle">Loading...</p>
+                </div>
             </div>
 
             <div id="followup-panel" class="hidden" style="margin-top: 8px;">
@@ -74,11 +147,11 @@
             <h3>Query Interface</h3>
             <div id="query-conversation" class="query-conversation">
                 </div>
-            <form id="query-form" class="query-form">
-                <input type="text" id="query-input" placeholder="Enter your query or use the mic...">
-                <button type="button" id="mic-btn" class="mic-btn" title="Start/Stop voice">🎤</button>
-                <button type="submit">Send</button>
-            </form>
+            <div class="voice-input-container" style="display: flex; justify-content: center; align-items: center; padding: 40px;">
+                <button type="button" id="mic-btn" class="mic-btn-large" title="Press to speak">
+                    <div class="voice-level-indicator"></div>
+                </button>
+            </div>
         </div>
 
         <button id="save-chat-btn" class="btn" style="margin-top:10px;">Save Chat</button>
@@ -230,8 +303,53 @@
         const sampleEl = document.getElementById('start-sample-prompt');
         if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try asking: “${startSamplePrompt}”` : '';
     }
+    // Load and display BFCL tools
+    function loadBFCLTools() {
+        fetch('/get_bfcl_tools')
+            .then(r => r.json())
+            .then(data => {
+                const toolsList = document.getElementById('tools-list');
+                const exampleQuestionContent = document.getElementById('example-question-content');
+                
+                if (data.tools && data.tools.length > 0) {
+                    toolsList.innerHTML = '';
+                    data.tools.forEach(tool => {
+                        const toolCard = document.createElement('div');
+                        toolCard.className = 'tool-card';
+                        toolCard.style.cssText = 'padding: 12px; margin-bottom: 8px; background: var(--color-surface-light); border-radius: 8px; border-left: 3px solid var(--color-primary);';
+                        
+                        const toolName = document.createElement('div');
+                        toolName.style.cssText = 'font-weight: 600; margin-bottom: 4px; color: var(--color-primary);';
+                        toolName.textContent = tool.name;
+                        
+                        const toolDesc = document.createElement('div');
+                        toolDesc.style.cssText = 'font-size: 14px; color: var(--color-text-secondary);';
+                        toolDesc.textContent = tool.description;
+                        
+                        toolCard.appendChild(toolName);
+                        toolCard.appendChild(toolDesc);
+                        toolsList.appendChild(toolCard);
+                    });
+                } else {
+                    toolsList.innerHTML = '<p class="subtle" style="padding: 8px;">No tools available</p>';
+                }
+                
+                if (data.exampleQuestion) {
+                    exampleQuestionContent.innerHTML = `<p>"${data.exampleQuestion}"</p>`;
+                } else {
+                    exampleQuestionContent.innerHTML = '<p class="subtle">No example available</p>';
+                }
+            })
+            .catch(err => {
+                console.warn('Failed to load BFCL tools', err);
+                document.getElementById('tools-list').innerHTML = '<p class="subtle" style="padding: 8px;">Error loading tools</p>';
+                document.getElementById('example-question-content').innerHTML = '<p class="subtle">Error loading example</p>';
+            });
+    }
+    
     // Render at load
     renderStartTopics();
+    loadBFCLTools(); // Load BFCL tools on page load
     fetch('{{ url_for('static', filename='data/example_functions.json') }}')
         .then(r=>r.json())
         .then(data => { if (data && Array.isArray(data.topics)) buildKeywordTopicIndex(data.topics); })
@@ -525,28 +643,76 @@
     // --- Voice Input: Conditional logic for STT backend ---
     const sttBackend = '{{ stt_backend }}';
     const micBtn = document.getElementById('mic-btn');
-    const queryInput = document.getElementById('query-input');
-    const sendBtn = document.querySelector('#query-form button[type="submit"]');
+    let hasUserPrompted = false; // Track if user has made their first prompt
 
     // --- Logic for Deepgram Streaming STT ---
     let socket;
     let microphone;
     let processor;
 
+    let currentTranscript = ''; // Track current transcript
+    
     async function startDeepgramStreaming() {
+        console.log('Starting Deepgram streaming...');
         isRecording = true;
         micBtn.classList.add('recording');
-        queryInput.placeholder = "🎤 Starting real-time conversation... Speak naturally!";
+        currentTranscript = '';
 
         try {
+            console.log('Requesting microphone access...');
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             microphone = stream;
+            console.log('Microphone access granted');
+
+            // Setup Web Audio API for voice level detection
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const micSource = audioContext.createMediaStreamSource(stream);
+            
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.5;  // Less smoothing for faster response
+            micSource.connect(analyser);
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const voiceLevelIndicator = document.querySelector('.voice-level-indicator');
+            
+            // Animation loop to update voice level indicator
+            let animationFrameId;
+            function updateVoiceLevel() {
+                if (!isRecording) {
+                    cancelAnimationFrame(animationFrameId);
+                    return;
+                }
+                
+                analyser.getByteFrequencyData(dataArray);
+                
+                // Calculate average volume with emphasis on voice frequencies
+                let sum = 0;
+                const voiceRangeStart = Math.floor(dataArray.length * 0.1);
+                const voiceRangeEnd = Math.floor(dataArray.length * 0.6);
+                for (let i = voiceRangeStart; i < voiceRangeEnd; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / (voiceRangeEnd - voiceRangeStart);
+                
+                // Amplify and map volume with non-linear scaling for better sensitivity
+                const normalized = Math.min(average / 128, 1.0);  // Normalize to 0-1 (more sensitive)
+                const amplified = Math.pow(normalized, 0.7);  // Exponential curve
+                const scale = 0.3 + (amplified * 1.4);  // Range from 0.3 to 1.7
+                
+                voiceLevelIndicator.style.transform = `translate(-50%, -50%) scale(${scale})`;
+                
+                animationFrameId = requestAnimationFrame(updateVoiceLevel);
+            }
+            
+            updateVoiceLevel();
 
             const wsUrl = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/stt/deepgram';
+            console.log('Connecting to WebSocket:', wsUrl);
             socket = new WebSocket(wsUrl);
 
             socket.onopen = async () => {
-                console.log('WebSocket connected for Deepgram streaming.');
+                console.log('✓ WebSocket connected for Deepgram streaming.');
                 try {
                     // Use MediaRecorder with a more compatible format
                     let mimeType = 'audio/webm;codecs=opus';
@@ -589,31 +755,31 @@
                     
                     if (data.transcript) {
                         // Real-time transcript updates
-                        queryInput.value = data.transcript;
-                        
-                        if (data.interim) {
-                            queryInput.style.fontStyle = 'italic';
-                            queryInput.style.opacity = '0.8';
-                        } else {
-                            queryInput.style.fontStyle = 'normal';
-                            queryInput.style.opacity = '1';
-                            // Don't add user message here - wait for LLM response
-                        }
-                        
+                        currentTranscript = data.transcript;
                         console.log('Real-time transcript:', data.transcript, data.interim ? '(interim)' : '(final)');
                         
                     } else if (data.llm_response) {
-                        // LLM interjected with a response
-                        console.log('LLM interjection:', data.llm_response);
+                        // LLM responded (either manually triggered or automatic)
+                        const responseType = data.type === 'manual_submit' ? 'Manual submit' : 'Auto interjection';
+                        console.log(`${responseType} - LLM response:`, data.llm_response);
+                        console.log('User transcript:', data.user_transcript);
                         
                         const conversation = document.getElementById('query-conversation');
                         
                         // First add the user message (the complete transcript that triggered the response)
-                        if (queryInput.value.trim()) {
+                        // Use the transcript from the server, not the local currentTranscript
+                        if (data.user_transcript && data.user_transcript.trim()) {
                             const userMessage = document.createElement('div');
                             userMessage.className = 'message-user';
-                            userMessage.textContent = queryInput.value.trim();
+                            userMessage.textContent = data.user_transcript.trim();
                             conversation.appendChild(userMessage);
+                            
+                            // Hide example question after first prompt
+                            if (!hasUserPrompted) {
+                                hasUserPrompted = true;
+                                const examplePanel = document.getElementById('example-question-panel');
+                                if (examplePanel) examplePanel.style.display = 'none';
+                            }
                         }
                         
                         // Then add LLM response
@@ -623,16 +789,23 @@
                         conversation.appendChild(botMessage);
                         conversation.scrollTop = conversation.scrollHeight;
                         
-                        // Clear the input to continue listening for new speech
-                        queryInput.value = '';
-                        queryInput.placeholder = '🎤 Continue speaking... AI is listening';
+                        // Clear the transcript
+                        currentTranscript = '';
+                        
+                        // If this was a manual submit, close the WebSocket connection
+                        if (data.type === 'manual_submit') {
+                            console.log('Received LLM response for manual submit, closing connection');
+                            if (socket) {
+                                socket.close();
+                                socket = null;
+                            }
+                        }
                         
                     } else if (data.error) {
                         console.error('WebSocket error:', data.error);
                         alert('Streaming error: ' + data.error);
                     } else if (data.status) {
                         console.log('WebSocket status:', data.message);
-                        queryInput.placeholder = '🎤 Real-time conversation active - speak naturally!';
                     }
                 } catch (e) {
                     console.error('Error parsing WebSocket message:', e);
@@ -640,40 +813,55 @@
             };
 
             socket.onclose = (event) => {
-                console.log('WebSocket closed:', event.code, event.reason);
-                if (isRecording) {
-                    console.log('WebSocket closed unexpectedly during recording');
-                    // Don't auto-reconnect, let user restart manually
-                }
+                console.log('❌ WebSocket closed:', event.code, event.reason);
+                isRecording = false;
+                micBtn.classList.remove('recording');
+                if (processor && processor.stop) processor.stop();
+                if (microphone) microphone.getTracks().forEach(track => track.stop());
             };
             socket.onerror = (err) => {
-                console.error('WebSocket error:', err);
-                if (isRecording) {
-                    console.log('WebSocket error during recording, stopping...');
-                    stopDeepgramStreaming();
-                }
+                console.error('❌ WebSocket error:', err);
+                alert('Connection error. Please try again.');
+                stopDeepgramStreaming();
             };
 
         } catch (err) {
-            console.error('Mic/WebSocket error:', err);
-            alert('Unable to access microphone or connect to streaming service: ' + err.message);
-            await stopDeepgramStreaming(); // Cleanup on error
+            console.error('❌ Mic/WebSocket error:', err);
+            if (err.name === 'NotAllowedError') {
+                alert('Microphone access denied. Please allow microphone access in your browser settings.');
+            } else {
+                alert('Unable to access microphone: ' + err.message);
+            }
+            isRecording = false;
+            micBtn.classList.remove('recording');
         }
     }
 
     async function stopDeepgramStreaming() {
-        if (socket) socket.close();
+        console.log('User manually stopping recording...');
+        
+        // Stop microphone and recording but keep WebSocket open for LLM response
         if (processor && processor.stop) processor.stop(); // Stop MediaRecorder
         if (microphone) microphone.getTracks().forEach(track => track.stop());
         isRecording = false;
         micBtn.classList.remove('recording');
-        queryInput.placeholder = "Enter your query or use the mic...";
         
-        // End the conversation session
-        console.log('Ending real-time conversation session');
-        queryInput.placeholder = "Real-time conversation ended. Click mic to start again.";
+        // Reset voice level indicator
+        const voiceLevelIndicator = document.querySelector('.voice-level-indicator');
+        if (voiceLevelIndicator) {
+            voiceLevelIndicator.style.transform = 'translate(-50%, -50%) scale(0.3)';
+        }
         
-        socket = microphone = processor = null;
+        microphone = processor = null;
+        
+        // Send finalize message to trigger LLM response with complete transcript
+        // Keep socket open to receive the response
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ action: 'finalize' }));
+            console.log('Sent finalize message to server - keeping connection open for LLM response');
+        }
+        
+        // Note: Socket will be closed after receiving LLM response (handled in onmessage)
     }
 
     // --- Logic for chunked recording (Whisper/Gemini) ---
@@ -700,11 +888,53 @@
             const mimeType = chooseAudioMime();
             mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
             
+            // Setup Web Audio API for voice level detection
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const micSource = audioContext.createMediaStreamSource(stream);
+            
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.5;  // Less smoothing for faster response
+            micSource.connect(analyser);
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const voiceLevelIndicator = document.querySelector('.voice-level-indicator');
+            
+            // Animation loop to update voice level indicator
+            let animationFrameId;
+            function updateVoiceLevel() {
+                if (!isRecording) {
+                    cancelAnimationFrame(animationFrameId);
+                    return;
+                }
+                
+                analyser.getByteFrequencyData(dataArray);
+                
+                // Calculate average volume with emphasis on voice frequencies
+                let sum = 0;
+                const voiceRangeStart = Math.floor(dataArray.length * 0.1);
+                const voiceRangeEnd = Math.floor(dataArray.length * 0.6);
+                for (let i = voiceRangeStart; i < voiceRangeEnd; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / (voiceRangeEnd - voiceRangeStart);
+                
+                // Amplify and map volume with non-linear scaling for better sensitivity
+                const normalized = Math.min(average / 128, 1.0);  // Normalize to 0-1 (more sensitive)
+                const amplified = Math.pow(normalized, 0.7);  // Exponential curve
+                const scale = 0.3 + (amplified * 1.4);  // Range from 0.3 to 1.7
+                
+                voiceLevelIndicator.style.transform = `translate(-50%, -50%) scale(${scale})`;
+                
+                animationFrameId = requestAnimationFrame(updateVoiceLevel);
+            }
+            
+            updateVoiceLevel();
+            
             const res = await fetch('/stt/start', { method: 'POST' });
             const data0 = await res.json();
             if (!res.ok || !data0.stt_sid) throw new Error(data0.error || 'Failed to start STT session');
             sttSid = data0.stt_sid;
-            if (sendBtn) sendBtn.disabled = true;
 
             mediaRecorder.addEventListener('dataavailable', async (e) => {
                 if (e.data && e.data.size > 0 && isRecording) {
@@ -719,7 +949,6 @@
             mediaRecorder.start(2000);
             isRecording = true;
             micBtn.classList.add('recording');
-            queryInput.placeholder = "Recording... Click mic to stop.";
         } catch (err) {
             console.error('Mic error:', err);
             alert('Unable to access microphone: ' + err.message);
@@ -732,15 +961,51 @@
         mediaRecorder.stop();
         mediaRecorder.stream.getTracks().forEach(t => t.stop());
         micBtn.classList.remove('recording');
-        if (sendBtn) sendBtn.disabled = false;
-        queryInput.placeholder = "Finalizing transcription...";
+        
+        // Reset voice level indicator
+        const voiceLevelIndicator = document.querySelector('.voice-level-indicator');
+        if (voiceLevelIndicator) {
+            voiceLevelIndicator.style.transform = 'translate(-50%, -50%) scale(0.3)';
+        }
 
         try {
             const res = await fetch('/stt/stop', { method: 'POST' });
             const data = await res.json();
             if (data.text) {
-                queryInput.value = data.text;
-                sendBtn.click();
+                // Display user message
+                const conversation = document.getElementById('query-conversation');
+                const userMessage = document.createElement('div');
+                userMessage.className = 'message-user';
+                userMessage.textContent = data.text;
+                conversation.appendChild(userMessage);
+                conversation.scrollTop = conversation.scrollHeight;
+                
+                // Hide example question after first prompt
+                if (!hasUserPrompted) {
+                    hasUserPrompted = true;
+                    const examplePanel = document.getElementById('example-question-panel');
+                    if (examplePanel) examplePanel.style.display = 'none';
+                }
+                
+                // Send query to backend
+                const queryData = new FormData();
+                queryData.append('query', data.text);
+                
+                fetch('/query', {
+                    method: 'POST',
+                    body: queryData
+                })
+                .then(response => response.json())
+                .then(responseData => {
+                    const botMessage = document.createElement('div');
+                    botMessage.className = 'message-bot';
+                    botMessage.textContent = responseData.response || (responseData.error ? ('Error: ' + responseData.error) : '');
+                    conversation.appendChild(botMessage);
+                    conversation.scrollTop = conversation.scrollHeight;
+                })
+                .catch(error => {
+                    console.error('Query error:', error);
+                });
             } else if (data.error) {
                 console.error('STT error:', data.error);
                 alert('Transcription failed: ' + data.error);
@@ -749,7 +1014,6 @@
             console.error('Failed to stop STT session:', e);
             alert('An error occurred while finalizing transcription.');
         } finally {
-            queryInput.placeholder = "Enter your query or use the mic...";
             mediaRecorder = null;
             sttSid = null;
         }
@@ -764,70 +1028,7 @@
         }
     });
 
-    document.getElementById('query-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const queryInput = document.getElementById('query-input');
-            const query = queryInput.value.trim();
-            if (!query) return;
-            lastUserQueryText = query;
-
-            // Display user message
-            const conversation = document.getElementById('query-conversation');
-            const userMessage = document.createElement('div');
-            userMessage.className = 'message-user';
-            userMessage.textContent = query;
-            conversation.appendChild(userMessage);
-            conversation.scrollTop = conversation.scrollHeight;
-
-            // Log turn
-            conversationLog.push({
-                turn: conversationLog.length + 1,
-                role: 'user',
-                inputType: 'text',
-                content: query,
-                timestamp: new Date().toISOString()
-            });
-
-            // Clear input
-            queryInput.value = '';
-
-            // Update left rail context
-            updateLatestPromptPanel(query);
-            refreshRelatedSuggestions(query);
-
-            //send query to backend
-            const queryData = new FormData();
-            queryData.append('query', query);
-
-            fetch ('/query', {
-                method: 'POST',
-                body: queryData
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Display bot response
-                const botMessage = document.createElement('div');
-                botMessage.className = 'message-bot';
-                botMessage.textContent = data.response || (data.error ? ('Error: ' + data.error) : '');
-                conversation.appendChild(botMessage);
-                conversation.scrollTop = conversation.scrollHeight;
-
-                // Log bot turn
-                conversationLog.push({
-                    turn: conversationLog.length + 1,
-                    role: 'assistant',
-                    inputType: 'model',
-                    content: botMessage.textContent,
-                    timestamp: new Date().toISOString()
-                });
-            })
-            .catch(error => {
-                console.error('Error during backend query:', error);
-            });
-        });
-
-        // Save chat button handler
+    // Save chat button handler
         document.getElementById('save-chat-btn').addEventListener('click', function() {
             const payload = {
                 sessionInfo: {

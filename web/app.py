@@ -748,7 +748,17 @@ def save_chat():
 # Voice Metadata Helper Function
 # ----------------------------
 
-def _save_voice_metadata(metadata: dict, transcript: str, session_id: str = None, prompt_number: int = 1) -> tuple[str, str]:
+def _save_voice_metadata(
+    metadata: dict, 
+    transcript: str, 
+    session_id: str = None, 
+    prompt_number: int = 1,
+    recording_start_time: str = None,
+    recording_end_time: str = None,
+    tools_shown: list = None,
+    example_prompt_shown: str = None,
+    is_first_prompt: bool = False
+) -> tuple[str, str]:
     """Save voice metadata to a JSON file. Returns (transcript, recording_path)."""
     try:
         # Use provided session_id or create new one
@@ -773,12 +783,45 @@ def _save_voice_metadata(metadata: dict, transcript: str, session_id: str = None
             if not transcript or len(transcript.split()) != len(words_list):
                 transcript = generated_transcript
         
+        # Calculate timing metrics
+        pause_before_speaking = 0.0
+        silence_duration = 0.0
+        recording_duration_actual = 0.0
+        
+        if words_list and len(words_list) > 0:
+            # Pause before speaking = time from recording start to first word
+            first_word_start = words_list[0].get('start', 0.0)
+            pause_before_speaking = first_word_start
+            
+            # Calculate silence duration (gaps between words)
+            for i in range(len(words_list) - 1):
+                current_word_end = words_list[i].get('end', 0.0)
+                next_word_start = words_list[i + 1].get('start', 0.0)
+                gap = next_word_start - current_word_end
+                if gap > 0.1:  # Only count gaps > 100ms as silence
+                    silence_duration += gap
+        
+        # Calculate actual recording duration if timestamps provided
+        if recording_start_time and recording_end_time:
+            try:
+                from dateutil import parser
+                start_dt = parser.isoparse(recording_start_time)
+                end_dt = parser.isoparse(recording_end_time)
+                recording_duration_actual = (end_dt - start_dt).total_seconds()
+            except Exception as e:
+                print(f"Error calculating recording duration: {e}")
+        
         # Add transcript and analysis
         full_metadata = {
             "session_id": session_id,
             "prompt_number": prompt_number,
             "transcript": transcript,
             "session_start": metadata.get('session_start'),
+            "recording_start_time": recording_start_time,
+            "recording_end_time": recording_end_time,
+            "recording_duration_actual": recording_duration_actual,
+            "pause_before_speaking": pause_before_speaking,
+            "silence_duration": silence_duration,
             "total_duration_seconds": metadata.get('total_duration', 0.0),
             "word_count": len(words_list),
             "utterance_count": len(metadata.get('utterances', [])),
@@ -821,6 +864,23 @@ def _save_voice_metadata(metadata: dict, transcript: str, session_id: str = None
             json.dump(full_metadata, f, ensure_ascii=False, indent=2)
         
         print(f"Voice metadata saved to {filepath}")
+        
+        # Save context metadata to separate file
+        context_filepath = os.path.join(prompt_folder, "context.json")
+        context_metadata = {
+            "session_id": session_id,
+            "prompt_number": prompt_number,
+            "is_first_prompt_in_session": is_first_prompt,
+            "tools_shown": tools_shown or [],
+            "example_prompt_shown": example_prompt_shown or "",
+            "saved_at": datetime.utcnow().isoformat() + 'Z'
+        }
+        
+        with open(context_filepath, 'w', encoding='utf-8') as f:
+            json.dump(context_metadata, f, ensure_ascii=False, indent=2)
+        
+        print(f"Context metadata saved to {context_filepath}")
+        
         return (transcript, recording_path)  # Return plain transcript and recording path
     except Exception as e:
         print(f"Error saving voice metadata: {e}")
@@ -1045,16 +1105,26 @@ def stt_deepgram(ws):
                                     if control_msg.get('action') == 'finalize':
                                         print(f"User manually finalized prompt: '{conversation.transcript}'")
                                         
-                                        # Get session info from control message
+                                        # Get session info and metadata from control message
                                         session_id = control_msg.get('session_id')
                                         prompt_number = control_msg.get('prompt_number', 1)
+                                        recording_start_time = control_msg.get('recording_start_time')
+                                        recording_end_time = control_msg.get('recording_end_time')
+                                        tools_shown = control_msg.get('tools_shown', [])
+                                        example_prompt_shown = control_msg.get('example_prompt_shown', '')
+                                        is_first_prompt = control_msg.get('is_first_prompt_in_session', False)
                                         
                                         # Save voice metadata and get recording_path
                                         current_transcript, recording_path = _save_voice_metadata(
                                             conversation.voice_metadata, 
                                             conversation.transcript,
                                             session_id,
-                                            prompt_number
+                                            prompt_number,
+                                            recording_start_time,
+                                            recording_end_time,
+                                            tools_shown,
+                                            example_prompt_shown,
+                                            is_first_prompt
                                         )
                                         
                                         # Reset for next prompt

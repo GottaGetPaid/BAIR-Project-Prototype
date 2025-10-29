@@ -313,6 +313,12 @@
                 const exampleQuestionContent = document.getElementById('example-question-content');
                 
                 if (data.tools && data.tools.length > 0) {
+                    // Store tools for metadata tracking
+                    currentToolsShown = data.tools.map(t => ({
+                        name: t.name,
+                        description: t.description
+                    }));
+                    
                     toolsList.innerHTML = '';
                     data.tools.forEach(tool => {
                         const toolCard = document.createElement('div');
@@ -333,11 +339,14 @@
                     });
                 } else {
                     toolsList.innerHTML = '<p class="subtle" style="padding: 8px;">No tools available</p>';
+                    currentToolsShown = [];
                 }
                 
                 if (data.exampleQuestion) {
+                    currentExamplePrompt = data.exampleQuestion; // Store for metadata
                     exampleQuestionContent.innerHTML = `<p>"${data.exampleQuestion}"</p>`;
                 } else {
+                    currentExamplePrompt = '';
                     exampleQuestionContent.innerHTML = '<p class="subtle">No example available</p>';
                 }
             })
@@ -662,6 +671,12 @@
     let audioChunks = []; // Store audio chunks
     let currentRecordingPath = null; // Track current recording path
     let intentionalClose = false; // Track if connection close is intentional
+    let recordingStartTime = null; // Track when recording started
+    let recordingEndTime = null; // Track when recording ended
+    
+    // Track context metadata (tools shown, example prompt)
+    let currentToolsShown = [];
+    let currentExamplePrompt = '';
     
     async function startDeepgramStreaming() {
         console.log('Starting Deepgram streaming...');
@@ -672,6 +687,8 @@
         audioChunks = []; // Reset audio chunks
         currentRecordingPath = null;
         intentionalClose = false; // Reset flag for new connection
+        recordingStartTime = new Date().toISOString(); // Capture start time
+        recordingEndTime = null;
         console.log(`Recording prompt ${promptNumber} in ${sessionId}`);
         
         // Create a live user message in the conversation
@@ -933,6 +950,7 @@
     async function stopDeepgramStreaming() {
         console.log('User manually stopping recording...');
         intentionalClose = true; // Mark this as an intentional close
+        recordingEndTime = new Date().toISOString(); // Capture end time
         
         // Stop audio recorder
         if (audioRecorder && audioRecorder.state === 'recording') {
@@ -966,7 +984,12 @@
             socket.send(JSON.stringify({ 
                 action: 'finalize',
                 session_id: sessionId,
-                prompt_number: promptNumber
+                prompt_number: promptNumber,
+                recording_start_time: recordingStartTime,
+                recording_end_time: recordingEndTime,
+                tools_shown: currentToolsShown,
+                example_prompt_shown: currentExamplePrompt,
+                is_first_prompt_in_session: (promptNumber === 1)
             }));
             console.log(`Sent finalize message for ${sessionId}/prompt_${promptNumber} - keeping connection open for LLM response`);
         }

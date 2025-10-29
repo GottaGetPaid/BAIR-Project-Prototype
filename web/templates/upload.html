@@ -147,6 +147,7 @@
             <h3>Query Interface</h3>
             <div id="query-conversation" class="query-conversation">
                 </div>
+            
             <div class="voice-input-container" style="display: flex; justify-content: center; align-items: center; padding: 40px;">
                 <button type="button" id="mic-btn" class="mic-btn-large" title="Press to speak">
                     <div class="voice-level-indicator"></div>
@@ -651,12 +652,23 @@
     let processor;
 
     let currentTranscript = ''; // Track current transcript
+    let liveUserMessage = null; // Track the live user message element
     
     async function startDeepgramStreaming() {
         console.log('Starting Deepgram streaming...');
         isRecording = true;
         micBtn.classList.add('recording');
         currentTranscript = '';
+        
+        // Create a live user message in the conversation
+        const conversation = document.getElementById('query-conversation');
+        liveUserMessage = document.createElement('div');
+        liveUserMessage.className = 'message-user';
+        liveUserMessage.style.opacity = '0.7'; // Dimmed while recording
+        liveUserMessage.style.fontStyle = 'italic';
+        liveUserMessage.textContent = 'Listening...';
+        conversation.appendChild(liveUserMessage);
+        conversation.scrollTop = conversation.scrollHeight;
 
         try {
             console.log('Requesting microphone access...');
@@ -758,6 +770,17 @@
                         currentTranscript = data.transcript;
                         console.log('Real-time transcript:', data.transcript, data.interim ? '(interim)' : '(final)');
                         
+                        // Update live user message in conversation
+                        if (liveUserMessage && data.transcript.trim()) {
+                            liveUserMessage.textContent = data.transcript;
+                            liveUserMessage.style.opacity = data.interim ? '0.7' : '0.85';
+                            liveUserMessage.style.fontStyle = data.interim ? 'italic' : 'normal';
+                            
+                            // Auto-scroll to keep message visible
+                            const conversation = document.getElementById('query-conversation');
+                            conversation.scrollTop = conversation.scrollHeight;
+                        }
+                        
                     } else if (data.llm_response) {
                         // LLM responded (either manually triggered or automatic)
                         const responseType = data.type === 'manual_submit' ? 'Manual submit' : 'Auto interjection';
@@ -766,12 +789,19 @@
                         
                         const conversation = document.getElementById('query-conversation');
                         
-                        // First add the user message (the complete transcript that triggered the response)
-                        // Use the transcript from the server, not the local currentTranscript
+                        // Remove the live user message if it exists
+                        if (liveUserMessage && liveUserMessage.parentNode) {
+                            liveUserMessage.remove();
+                            liveUserMessage = null;
+                        }
+                        
+                        // Add the final user message (plain text, no pause markers)
                         if (data.user_transcript && data.user_transcript.trim()) {
                             const userMessage = document.createElement('div');
                             userMessage.className = 'message-user';
                             userMessage.textContent = data.user_transcript.trim();
+                            userMessage.style.opacity = '1'; // Full opacity
+                            userMessage.style.fontStyle = 'normal'; // Not italic
                             conversation.appendChild(userMessage);
                             
                             // Hide example question after first prompt
@@ -834,6 +864,12 @@
             }
             isRecording = false;
             micBtn.classList.remove('recording');
+            
+            // Remove live user message on error
+            if (liveUserMessage && liveUserMessage.parentNode) {
+                liveUserMessage.remove();
+                liveUserMessage = null;
+            }
         }
     }
 
@@ -850,6 +886,12 @@
         const voiceLevelIndicator = document.querySelector('.voice-level-indicator');
         if (voiceLevelIndicator) {
             voiceLevelIndicator.style.transform = 'translate(-50%, -50%) scale(0.3)';
+        }
+        
+        // Make the live user message solid (not italic) while waiting for LLM response
+        if (liveUserMessage) {
+            liveUserMessage.style.opacity = '1';
+            liveUserMessage.style.fontStyle = 'normal';
         }
         
         microphone = processor = null;

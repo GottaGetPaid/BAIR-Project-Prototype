@@ -1016,8 +1016,10 @@ def stt_deepgram(ws):
                                     if control_msg.get('action') == 'finalize':
                                         print(f"User manually finalized prompt: '{conversation.transcript}'")
                                         
-                                        # Save voice metadata and get descriptive transcript
-                                        descriptive_transcript = _save_voice_metadata(conversation.voice_metadata, conversation.transcript)
+                                        # Save voice metadata (includes descriptive transcript for metadata file)
+                                        _save_voice_metadata(conversation.voice_metadata, conversation.transcript)
+                                        
+                                        # Use plain transcript for display (without pause markers)
                                         current_transcript = conversation.transcript
                                         
                                         # Reset for next prompt
@@ -1039,7 +1041,7 @@ def stt_deepgram(ws):
                                                 try:
                                                     ws.send(json.dumps({
                                                         "llm_response": response,
-                                                        "user_transcript": descriptive_transcript or current_transcript,
+                                                        "user_transcript": current_transcript,  # Plain transcript without pause markers
                                                         "type": "manual_submit"
                                                     }))
                                                     print(f"✓ Sent LLM response successfully")

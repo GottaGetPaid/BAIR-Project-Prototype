@@ -122,10 +122,19 @@
                 </div>
             </div>
 
-            <div id="example-question-panel" style="margin-top: 12px;">
-                <div class="section-title">Example Question</div>
-                <div id="example-question-content" class="sample-prompt-text" style="padding: 12px; background: var(--color-surface-light); border-radius: 8px; font-style: italic; font-size: 13px;">
-                    <p class="subtle">Loading...</p>
+            <div id="prompt-ideas-panel" style="margin-top: 12px;">
+                <div class="section-title">Prompt Ideas</div>
+                <div id="prompt-ideas-content" style="padding: 12px; background: var(--color-surface-light); border-radius: 8px;">
+                    <ul id="prompt-ideas-list" class="prompt-ideas-list" style="list-style: disc; margin-left: 18px; font-size: 13px; color: var(--color-text-secondary);">
+                        <li class="subtle">Loading ideas...</li>
+                    </ul>
+                    <button id="toggle-example-btn" class="btn btn-ghost" style="margin-top: 8px; font-size: 12px; padding: 6px 12px;">Need more guidance?</button>
+                    <div id="example-question-wrapper" class="hidden" style="margin-top: 8px;">
+                        <div class="section-subtitle" style="font-size: 12px; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.06em;">Sample Prompt</div>
+                        <div id="example-question-content" class="sample-prompt-text" style="padding: 10px; background: rgba(0,0,0,0.05); border-radius: 6px; font-size: 13px; font-style: italic; color: var(--color-text-secondary);">
+                            <p class="subtle">Loading...</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -305,12 +314,49 @@
         if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try asking: “${startSamplePrompt}”` : '';
     }
     // Load and display BFCL tools
+    function generatePromptIdeas(tools) {
+        const ideas = [];
+        if (!tools || tools.length === 0) {
+            return [
+                'Describe a personal goal or plan and ask the assistant how it might use the available tools to help.',
+                'Invent a scenario and challenge the assistant to figure out which tool (if any) should be used.',
+                'Ask for suggestions first, then refine your request into a detailed plan.'
+            ];
+        }
+
+        const toolNames = tools.map(t => t.name.replace(/_/g, ' '));
+        const toolDescriptions = tools.map(t => t.description || '').map(desc => desc.charAt(0).toLowerCase() + desc.slice(1));
+
+        ideas.push(`Describe your own situation where the assistant should ${toolDescriptions[0]}. Focus on the details that matter to you.`);
+
+        if (toolNames.length >= 2) {
+            ideas.push(`Create a challenge that makes the assistant combine <strong>${toolNames[0]}</strong> and <strong>${toolNames[1]}</strong> in a single response.`);
+        }
+
+        ideas.push('Invite the assistant to brainstorm multiple approaches before choosing which tool (if any) to call.');
+
+        return ideas;
+    }
+
+    function renderPromptIdeas(ideas) {
+        const listEl = document.getElementById('prompt-ideas-list');
+        if (!listEl) return;
+
+        listEl.innerHTML = '';
+        ideas.forEach(text => {
+            const li = document.createElement('li');
+            li.innerHTML = text;
+            listEl.appendChild(li);
+        });
+    }
+
     function loadBFCLTools() {
         fetch('/get_bfcl_tools')
             .then(r => r.json())
             .then(data => {
                 const toolsList = document.getElementById('tools-list');
                 const exampleQuestionContent = document.getElementById('example-question-content');
+                const toggleExampleBtn = document.getElementById('toggle-example-btn');
                 
                 if (data.tools && data.tools.length > 0) {
                     // Store tools for metadata tracking
@@ -341,21 +387,52 @@
                     toolsList.innerHTML = '<p class="subtle" style="padding: 8px;">No tools available</p>';
                     currentToolsShown = [];
                 }
-                
-                if (data.exampleQuestion) {
-                    currentExamplePrompt = data.exampleQuestion; // Store for metadata
-                    exampleQuestionContent.innerHTML = `<p>"${data.exampleQuestion}"</p>`;
-                } else {
-                    currentExamplePrompt = '';
-                    exampleQuestionContent.innerHTML = '<p class="subtle">No example available</p>';
-                }
+
+                fetchedExamplePrompt = data.exampleQuestion || '';
+                exampleQuestionContent.innerHTML = '<p class="subtle">Click the button above to view a sample prompt.</p>';
+                exampleRevealed = false;
+                currentExamplePrompt = '';
+                if (toggleExampleBtn) toggleExampleBtn.textContent = 'Need more guidance?';
+
+                currentPromptIdeas = generatePromptIdeas(currentToolsShown);
+                renderPromptIdeas(currentPromptIdeas);
             })
             .catch(err => {
                 console.warn('Failed to load BFCL tools', err);
                 document.getElementById('tools-list').innerHTML = '<p class="subtle" style="padding: 8px;">Error loading tools</p>';
                 document.getElementById('example-question-content').innerHTML = '<p class="subtle">Error loading example</p>';
+                renderPromptIdeas([
+                    'Think of a real task you need help with and describe it in your own words.',
+                    'Ask the assistant to suggest possible tool workflows before committing to one.',
+                    'Focus on outcomes you care about and invite the assistant to figure out the steps.'
+                ]);
             });
     }
+
+    // Handle example prompt reveal
+    document.getElementById('toggle-example-btn')?.addEventListener('click', () => {
+        const wrapper = document.getElementById('example-question-wrapper');
+        const exampleContent = document.getElementById('example-question-content');
+        const toggleBtn = document.getElementById('toggle-example-btn');
+        if (!wrapper || !exampleContent || !toggleBtn) return;
+
+        const isHidden = wrapper.classList.contains('hidden');
+        if (isHidden) {
+            wrapper.classList.remove('hidden');
+            toggleBtn.textContent = 'Hide sample prompt';
+            exampleContent.innerHTML = fetchedExamplePrompt
+                ? `<p>"${fetchedExamplePrompt}"</p>`
+                : '<p class="subtle">No example available</p>';
+            currentExamplePrompt = fetchedExamplePrompt || '';
+            exampleRevealed = true;
+        } else {
+            wrapper.classList.add('hidden');
+            toggleBtn.textContent = 'Need more guidance?';
+            exampleContent.innerHTML = '<p class="subtle">Click the button above to view a sample prompt.</p>';
+            currentExamplePrompt = '';
+            exampleRevealed = false;
+        }
+    });
     
     // Render at load
     renderStartTopics();
@@ -676,7 +753,10 @@
     
     // Track context metadata (tools shown, example prompt)
     let currentToolsShown = [];
+    let fetchedExamplePrompt = '';
     let currentExamplePrompt = '';
+    let exampleRevealed = false;
+    let currentPromptIdeas = [];
     
     async function startDeepgramStreaming() {
         console.log('Starting Deepgram streaming...');
@@ -989,6 +1069,7 @@
                 recording_end_time: recordingEndTime,
                 tools_shown: currentToolsShown,
                 example_prompt_shown: currentExamplePrompt,
+                prompt_ideas: currentPromptIdeas,
                 is_first_prompt_in_session: (promptNumber === 1)
             }));
             console.log(`Sent finalize message for ${sessionId}/prompt_${promptNumber} - keeping connection open for LLM response`);

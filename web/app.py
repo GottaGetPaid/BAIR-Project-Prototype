@@ -757,6 +757,7 @@ def _save_voice_metadata(
     recording_end_time: str = None,
     tools_shown: list = None,
     example_prompt_shown: str = None,
+    prompt_ideas: list = None,
     is_first_prompt: bool = False
 ) -> tuple[str, str]:
     """Save voice metadata to a JSON file. Returns (transcript, recording_path)."""
@@ -873,6 +874,7 @@ def _save_voice_metadata(
             "is_first_prompt_in_session": is_first_prompt,
             "tools_shown": tools_shown or [],
             "example_prompt_shown": example_prompt_shown or "",
+            "prompt_ideas": prompt_ideas or [],
             "saved_at": datetime.utcnow().isoformat() + 'Z'
         }
         
@@ -1112,6 +1114,7 @@ def stt_deepgram(ws):
                                         recording_end_time = control_msg.get('recording_end_time')
                                         tools_shown = control_msg.get('tools_shown', [])
                                         example_prompt_shown = control_msg.get('example_prompt_shown', '')
+                                        prompt_ideas = control_msg.get('prompt_ideas', [])
                                         is_first_prompt = control_msg.get('is_first_prompt_in_session', False)
                                         
                                         # Save voice metadata and get recording_path
@@ -1124,6 +1127,7 @@ def stt_deepgram(ws):
                                             recording_end_time,
                                             tools_shown,
                                             example_prompt_shown,
+                                            prompt_ideas,
                                             is_first_prompt
                                         )
                                         

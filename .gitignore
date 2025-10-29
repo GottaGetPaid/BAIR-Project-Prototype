@@ -1,8 +1,7 @@
 .env
 venv/
 .venv/
-*.webm
-voice_metadata/
+voice_recordings/
 __pycache__/
 test-sessions/
 queries/queries.csv

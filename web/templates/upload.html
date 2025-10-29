@@ -646,6 +646,11 @@
     const micBtn = document.getElementById('mic-btn');
     let hasUserPrompted = false; // Track if user has made their first prompt
 
+    // --- Session tracking for organized recordings ---
+    const sessionId = 'session_' + new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_');
+    let promptNumber = 0; // Track prompt number in this session
+    console.log(`Session started: ${sessionId}`);
+
     // --- Logic for Deepgram Streaming STT ---
     let socket;
     let microphone;
@@ -653,12 +658,21 @@
 
     let currentTranscript = ''; // Track current transcript
     let liveUserMessage = null; // Track the live user message element
+    let audioRecorder = null; // MediaRecorder for saving audio
+    let audioChunks = []; // Store audio chunks
+    let currentRecordingPath = null; // Track current recording path
+    let intentionalClose = false; // Track if connection close is intentional
     
     async function startDeepgramStreaming() {
         console.log('Starting Deepgram streaming...');
+        promptNumber++; // Increment prompt number for this session
         isRecording = true;
         micBtn.classList.add('recording');
         currentTranscript = '';
+        audioChunks = []; // Reset audio chunks
+        currentRecordingPath = null;
+        intentionalClose = false; // Reset flag for new connection
+        console.log(`Recording prompt ${promptNumber} in ${sessionId}`);
         
         // Create a live user message in the conversation
         const conversation = document.getElementById('query-conversation');
@@ -675,6 +689,17 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             microphone = stream;
             console.log('Microphone access granted');
+            
+            // Setup MediaRecorder to capture audio for saving
+            const mimeType = 'audio/webm;codecs=opus';
+            audioRecorder = new MediaRecorder(stream, { mimeType });
+            audioRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    audioChunks.push(e.data);
+                }
+            };
+            audioRecorder.start(100); // Collect chunks every 100ms
+            console.log('Audio recording started');
 
             // Setup Web Audio API for voice level detection
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -822,9 +847,30 @@
                         // Clear the transcript
                         currentTranscript = '';
                         
+                        // Save audio recording if we have one and a recording_path
+                        if (data.recording_path && audioChunks.length > 0) {
+                            console.log(`Saving audio recording for ${data.recording_path}...`);
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                            const formData = new FormData();
+                            formData.append('audio', audioBlob, 'audio.webm');
+                            formData.append('recording_path', data.recording_path);
+                            
+                            fetch('/save_audio_recording', {
+                                method: 'POST',
+                                body: formData
+                            })
+                            .then(r => r.json())
+                            .then(result => {
+                                console.log('✓ Audio recording saved:', result);
+                                audioChunks = []; // Clear chunks after saving
+                            })
+                            .catch(err => console.error('Failed to save audio recording:', err));
+                        }
+                        
                         // If this was a manual submit, close the WebSocket connection
                         if (data.type === 'manual_submit') {
                             console.log('Received LLM response for manual submit, closing connection');
+                            intentionalClose = true; // Mark as intentional before closing
                             if (socket) {
                                 socket.close();
                                 socket = null;
@@ -843,7 +889,10 @@
             };
 
             socket.onclose = (event) => {
-                console.log('❌ WebSocket closed:', event.code, event.reason);
+                console.log('WebSocket closed:', event.code, event.reason);
+                if (!intentionalClose) {
+                    console.warn('⚠️ Unexpected WebSocket close');
+                }
                 isRecording = false;
                 micBtn.classList.remove('recording');
                 if (processor && processor.stop) processor.stop();
@@ -851,8 +900,9 @@
             };
             socket.onerror = (err) => {
                 console.error('❌ WebSocket error:', err);
-                alert('Connection error. Please try again.');
-                stopDeepgramStreaming();
+                if (!intentionalClose) {
+                    alert('Connection error. Please try again.');
+                }
             };
 
         } catch (err) {
@@ -865,6 +915,13 @@
             isRecording = false;
             micBtn.classList.remove('recording');
             
+            // Stop audio recorder on error
+            if (audioRecorder && audioRecorder.state === 'recording') {
+                audioRecorder.stop();
+            }
+            audioRecorder = null;
+            audioChunks = [];
+            
             // Remove live user message on error
             if (liveUserMessage && liveUserMessage.parentNode) {
                 liveUserMessage.remove();
@@ -875,9 +932,16 @@
 
     async function stopDeepgramStreaming() {
         console.log('User manually stopping recording...');
+        intentionalClose = true; // Mark this as an intentional close
+        
+        // Stop audio recorder
+        if (audioRecorder && audioRecorder.state === 'recording') {
+            audioRecorder.stop();
+            console.log('Audio recording stopped');
+        }
         
         // Stop microphone and recording but keep WebSocket open for LLM response
-        if (processor && processor.stop) processor.stop(); // Stop MediaRecorder
+        if (processor && processor.stop) processor.stop();
         if (microphone) microphone.getTracks().forEach(track => track.stop());
         isRecording = false;
         micBtn.classList.remove('recording');
@@ -894,13 +958,17 @@
             liveUserMessage.style.fontStyle = 'normal';
         }
         
-        microphone = processor = null;
+        microphone = processor = audioRecorder = null;
         
         // Send finalize message to trigger LLM response with complete transcript
         // Keep socket open to receive the response
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ action: 'finalize' }));
-            console.log('Sent finalize message to server - keeping connection open for LLM response');
+            socket.send(JSON.stringify({ 
+                action: 'finalize',
+                session_id: sessionId,
+                prompt_number: promptNumber
+            }));
+            console.log(`Sent finalize message for ${sessionId}/prompt_${promptNumber} - keeping connection open for LLM response`);
         }
         
         // Note: Socket will be closed after receiving LLM response (handled in onmessage)

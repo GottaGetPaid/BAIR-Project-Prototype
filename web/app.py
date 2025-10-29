@@ -59,9 +59,9 @@ def get_whisper_model():
 
 # Setup folders
 QUERIES_FOLDER = 'queries'
-VOICE_METADATA_FOLDER = 'voice_metadata'
+VOICE_RECORDINGS_FOLDER = 'voice_recordings'
 os.makedirs(QUERIES_FOLDER, exist_ok=True)
-os.makedirs(VOICE_METADATA_FOLDER, exist_ok=True)
+os.makedirs(VOICE_RECORDINGS_FOLDER, exist_ok=True)
 REPO_ROOT = parent_dir
 TEST_SESSIONS_FOLDER = os.path.join(REPO_ROOT, 'test-sessions')
 os.makedirs(TEST_SESSIONS_FOLDER, exist_ok=True)
@@ -443,8 +443,9 @@ def get_bfcl_tools():
     """Load BFCL tools from queries folder and return sample tools with example question."""
     import random
     
-    bfcl_path = os.path.join(parent_dir, 'queries', 'BFCL_multiple.jsonl')
+    bfcl_path = os.path.join(parent_dir, 'queries', 'BFCL_v4_parallel_multiple.jsonl')
     
+    # If BFCL file doesn't exist, return defaults
     if not os.path.exists(bfcl_path):
         return jsonify({"tools": [], "exampleQuestion": "", "error": "BFCL file not found"}), 404
     
@@ -505,14 +506,53 @@ def save_voice_metadata_route():
         payload = request.get_json(force=True, silent=False) or {}
         metadata = payload.get('metadata', {})
         transcript = payload.get('transcript', '')
+        session_id = payload.get('session_id')
+        prompt_number = payload.get('prompt_number', 1)
         
-        filepath = _save_voice_metadata(metadata, transcript)
+        transcript, recording_path = _save_voice_metadata(metadata, transcript, session_id, prompt_number)
         
-        if filepath:
-            return jsonify({"message": "Voice metadata saved", "path": filepath}), 200
+        if recording_path:
+            return jsonify({
+                "message": "Voice metadata saved", 
+                "recording_path": recording_path,
+                "transcript": transcript
+            }), 200
         else:
             return jsonify({"error": "Failed to save metadata"}), 500
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/save_audio_recording', methods=['POST'])
+def save_audio_recording():
+    """Save audio recording file to match the voice metadata."""
+    try:
+        if 'audio' not in request.files:
+            return jsonify({"error": "No audio file provided"}), 400
+        
+        recording_path = request.form.get('recording_path')
+        if not recording_path:
+            return jsonify({"error": "No recording_path provided"}), 400
+        
+        audio_file = request.files['audio']
+        recording_folder = os.path.join(VOICE_RECORDINGS_FOLDER, recording_path)
+        
+        # Ensure folder exists
+        if not os.path.exists(recording_folder):
+            return jsonify({"error": f"Recording folder {recording_path} not found"}), 404
+        
+        # Save audio file
+        audio_path = os.path.join(recording_folder, "audio.webm")
+        audio_file.save(audio_path)
+        
+        print(f"Audio recording saved to {audio_path}")
+        return jsonify({
+            "message": "Audio recording saved",
+            "recording_path": recording_path,
+            "audio_path": audio_path
+        }), 200
+        
+    except Exception as e:
+        print(f"Error saving audio recording: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/save_chat', methods=['POST'])
@@ -708,12 +748,21 @@ def save_chat():
 # Voice Metadata Helper Function
 # ----------------------------
 
-def _save_voice_metadata(metadata: dict, transcript: str) -> str:
-    """Save voice metadata to a JSON file without saving audio."""
+def _save_voice_metadata(metadata: dict, transcript: str, session_id: str = None, prompt_number: int = 1) -> tuple[str, str]:
+    """Save voice metadata to a JSON file. Returns (transcript, recording_path)."""
     try:
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        filename = f"voice_metadata_{timestamp}.json"
-        filepath = os.path.join(VOICE_METADATA_FOLDER, filename)
+        # Use provided session_id or create new one
+        if not session_id:
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            session_id = f"session_{timestamp}"
+        
+        # Create session folder and prompt subfolder
+        session_folder = os.path.join(VOICE_RECORDINGS_FOLDER, session_id)
+        prompt_folder = os.path.join(session_folder, f"prompt_{prompt_number}")
+        os.makedirs(prompt_folder, exist_ok=True)
+        
+        recording_path = f"{session_id}/prompt_{prompt_number}"
+        filepath = os.path.join(prompt_folder, "metadata.json")
         
         # Build full transcript from words to ensure consistency
         words_list = metadata.get('words', [])
@@ -726,6 +775,8 @@ def _save_voice_metadata(metadata: dict, transcript: str) -> str:
         
         # Add transcript and analysis
         full_metadata = {
+            "session_id": session_id,
+            "prompt_number": prompt_number,
             "transcript": transcript,
             "session_start": metadata.get('session_start'),
             "total_duration_seconds": metadata.get('total_duration', 0.0),
@@ -770,10 +821,10 @@ def _save_voice_metadata(metadata: dict, transcript: str) -> str:
             json.dump(full_metadata, f, ensure_ascii=False, indent=2)
         
         print(f"Voice metadata saved to {filepath}")
-        return descriptive_transcript.strip()  # Return descriptive transcript instead of filepath
+        return (transcript, recording_path)  # Return plain transcript and recording path
     except Exception as e:
         print(f"Error saving voice metadata: {e}")
-        return ""
+        return ("", "")
 
 # ----------------------------
 # Deepgram STT (Live) route
@@ -994,11 +1045,17 @@ def stt_deepgram(ws):
                                     if control_msg.get('action') == 'finalize':
                                         print(f"User manually finalized prompt: '{conversation.transcript}'")
                                         
-                                        # Save voice metadata (includes descriptive transcript for metadata file)
-                                        _save_voice_metadata(conversation.voice_metadata, conversation.transcript)
+                                        # Get session info from control message
+                                        session_id = control_msg.get('session_id')
+                                        prompt_number = control_msg.get('prompt_number', 1)
                                         
-                                        # Use plain transcript for display (without pause markers)
-                                        current_transcript = conversation.transcript
+                                        # Save voice metadata and get recording_path
+                                        current_transcript, recording_path = _save_voice_metadata(
+                                            conversation.voice_metadata, 
+                                            conversation.transcript,
+                                            session_id,
+                                            prompt_number
+                                        )
                                         
                                         # Reset for next prompt
                                         conversation.transcript = ""
@@ -1020,9 +1077,10 @@ def stt_deepgram(ws):
                                                     ws.send(json.dumps({
                                                         "llm_response": response,
                                                         "user_transcript": current_transcript,  # Plain transcript without pause markers
+                                                        "recording_path": recording_path,  # For saving audio file
                                                         "type": "manual_submit"
                                                     }))
-                                                    print(f"✓ Sent LLM response successfully")
+                                                    print(f"✓ Sent LLM response successfully (recording_path: {recording_path})")
                                                 except Exception as e:
                                                     print(f"Failed to send LLM response (connection may be closed): {e}")
                                             loop.close()

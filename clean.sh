@@ -11,9 +11,9 @@ echo "Cleaning project..."
 echo "Removing test sessions..."
 rm -rf "$SCRIPT_DIR/test-sessions"
 
-# 2. Remove voice metadata files
-echo "Removing voice metadata..."
-rm -rf "$SCRIPT_DIR/voice_metadata"
+# 2. Remove voice recordings (audio + metadata)
+echo "Removing voice recordings..."
+rm -rf "$SCRIPT_DIR/voice_recordings"
 
 # 4. Remove the generated queries.csv file
 if [ -f "$SCRIPT_DIR/queries/queries.csv" ]; then
@@ -28,6 +28,6 @@ find "$SCRIPT_DIR" -type d -name "__pycache__" -exec rm -rf {} +
 # 5. Recreate necessary directories for the app to run
 echo "Recreating necessary directories..."
 mkdir -p "$SCRIPT_DIR/test-sessions"
-mkdir -p "$SCRIPT_DIR/voice_metadata"
+mkdir -p "$SCRIPT_DIR/voice_recordings"
 
 echo "Cleanup complete."

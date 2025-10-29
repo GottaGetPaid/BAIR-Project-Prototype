@@ -86,19 +86,3 @@ Natural speech segments detected by Deepgram's AI:
   "saved_at": "2025-10-23T20:15:33.000Z"
 }
 ```
-
-## Use Cases
-
-This metadata enables detailed analysis:
-
-1. **Speech Pattern Analysis**: Study pause patterns, speaking rate, hesitations
-2. **Confidence Tracking**: Monitor recognition confidence per word
-3. **Temporal Analysis**: Analyze when users pause, speed up, or slow down
-4. **UX Research**: Understand how users interact with voice interfaces
-5. **Training Data**: Generate labeled datasets without storing audio
-
-## Privacy
-
-✅ **No audio files are stored**  
-✅ Only text transcripts and timing metadata are saved  
-✅ Suitable for privacy-conscious applications

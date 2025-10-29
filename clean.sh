@@ -11,11 +11,7 @@ echo "Cleaning project..."
 echo "Removing test sessions..."
 rm -rf "$SCRIPT_DIR/test-sessions"
 
-# 2. Remove uploaded files
-echo "Removing uploaded files..."
-rm -rf "$SCRIPT_DIR/uploaded_files"
-
-# 3. Remove voice metadata files
+# 2. Remove voice metadata files
 echo "Removing voice metadata..."
 rm -rf "$SCRIPT_DIR/voice_metadata"
 
@@ -32,7 +28,6 @@ find "$SCRIPT_DIR" -type d -name "__pycache__" -exec rm -rf {} +
 # 5. Recreate necessary directories for the app to run
 echo "Recreating necessary directories..."
 mkdir -p "$SCRIPT_DIR/test-sessions"
-mkdir -p "$SCRIPT_DIR/uploaded_files/audio_tmp"
 mkdir -p "$SCRIPT_DIR/voice_metadata"
 
 echo "Cleanup complete."

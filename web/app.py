@@ -7,6 +7,7 @@ import sys
 import os
 import json
 import re
+import hashlib
 from collections import Counter
 try:
     import google.generativeai as genai
@@ -65,6 +66,9 @@ os.makedirs(VOICE_RECORDINGS_FOLDER, exist_ok=True)
 REPO_ROOT = parent_dir
 TEST_SESSIONS_FOLDER = os.path.join(REPO_ROOT, 'test-sessions')
 os.makedirs(TEST_SESSIONS_FOLDER, exist_ok=True)
+DATA_FOLDER = os.path.join(REPO_ROOT, 'data')
+os.makedirs(DATA_FOLDER, exist_ok=True)
+USER_PROFILES_FILE = os.path.join(DATA_FOLDER, 'user_profiles.json')
 
 MODEL_PROVIDER_CACHE = None
 TOPIC_DATA_PATH = os.path.join(current_dir, 'static', 'data', 'example_functions.json')
@@ -219,6 +223,42 @@ def _extract_json_object(text: str):
     return None
 
 
+def _trim(value: str) -> str:
+    return (value or '').strip()
+
+
+def _username_key(value: str) -> str:
+    return _trim(value).lower()
+
+
+def _load_user_profiles() -> dict:
+    if not os.path.exists(USER_PROFILES_FILE):
+        return {}
+    try:
+        with open(USER_PROFILES_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as exc:
+        print(f"Failed to load user profiles: {exc}")
+    return {}
+
+
+def _save_user_profiles(profiles: dict) -> None:
+    try:
+        with open(USER_PROFILES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(profiles, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        print(f"Failed to save user profiles: {exc}")
+
+
+def _hash_email(email: str) -> str:
+    email_norm = _trim(email).lower()
+    if not email_norm:
+        return ''
+    return hashlib.sha256(email_norm.encode('utf-8')).hexdigest()
+
+
 def _normalize_topics(value) -> list[dict]:
     topics: list[dict] = []
     if isinstance(value, dict):
@@ -281,9 +321,141 @@ def _llm_related_topics(prompt: str) -> dict | None:
         "followUps": followups[:2],
     }
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    current_user = flask_session.get('username')
+
+    if request.method == "POST":
+        username_input = request.form.get('username', '')
+        username = _trim(username_input)
+        if not username:
+            error = "Please enter a username to continue."
+        else:
+            username_key = _username_key(username)
+            profiles = _load_user_profiles()
+            flask_session['username'] = username
+            flask_session['username_key'] = username_key
+            if username_key in profiles:
+                flask_session.pop('pending_profile_username', None)
+                flask_session.pop('pending_profile_key', None)
+                return redirect(url_for('index'))
+            flask_session['pending_profile_username'] = username
+            flask_session['pending_profile_key'] = username_key
+            return redirect(url_for('onboarding'))
+
+    return render_template("login.html", error=error, current_user=current_user)
+
+
+@app.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    pending_username = flask_session.get('pending_profile_username') or flask_session.get('username')
+    pending_key = flask_session.get('pending_profile_key') or flask_session.get('username_key')
+
+    if not pending_username or not pending_key:
+        return redirect(url_for('login'))
+
+    profiles = _load_user_profiles()
+
+    # If profile already exists, skip onboarding.
+    if pending_key in profiles and request.method == "GET":
+        flask_session.pop('pending_profile_username', None)
+        flask_session.pop('pending_profile_key', None)
+        return redirect(url_for('index'))
+
+    errors: list[str] = []
+    form_defaults = {
+        "first_name": "",
+        "last_name": "",
+        "gender": "",
+        "pronouns": "",
+        "ethnicity": "",
+        "age_range": "",
+        "email": "",
+    }
+
+    if request.method == "POST":
+        for field in form_defaults.keys():
+            form_defaults[field] = _trim(request.form.get(field, ""))
+
+        if not form_defaults["first_name"]:
+            errors.append("First name is required.")
+        if not form_defaults["last_name"]:
+            errors.append("Last name is required.")
+        if not form_defaults["gender"]:
+            errors.append("Please provide a gender.")
+        if not form_defaults["ethnicity"]:
+            errors.append("Please provide an ethnicity.")
+        if not form_defaults["email"]:
+            errors.append("Email is required.")
+
+        if not errors:
+            existing_profile = profiles.get(pending_key, {})
+            created_at = existing_profile.get("created_at") or datetime.utcnow().isoformat() + 'Z'
+            profile = {
+                "username": existing_profile.get("username") or pending_username,
+                "first_name": form_defaults["first_name"],
+                "last_name": form_defaults["last_name"],
+                "gender": form_defaults["gender"],
+                "pronouns": form_defaults["pronouns"],
+                "ethnicity": form_defaults["ethnicity"],
+                "age_range": form_defaults["age_range"],
+                "email_hash": _hash_email(form_defaults["email"]),
+                "email_hash_method": "sha256",
+                "created_at": created_at,
+                "updated_at": datetime.utcnow().isoformat() + 'Z',
+                "sessions_completed": existing_profile.get("sessions_completed", 0),
+            }
+            profiles[pending_key] = profile
+            _save_user_profiles(profiles)
+            flask_session['username'] = profile["username"]
+            flask_session['username_key'] = pending_key
+            flask_session.pop('pending_profile_username', None)
+            flask_session.pop('pending_profile_key', None)
+            return redirect(url_for('index'))
+
+    return render_template(
+        "onboarding.html",
+        username=pending_username,
+        errors=errors,
+        form_data=form_defaults,
+    )
+
+
+@app.route("/logout")
+def logout():
+    flask_session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route("/")
 def index():
-    return render_template("upload.html", stt_backend=AppConfig.STT_BACKEND)
+    username = flask_session.get('username')
+    username_key = flask_session.get('username_key')
+
+    if not username:
+        return redirect(url_for('login'))
+
+    if not username_key and username:
+        username_key = _username_key(username)
+        flask_session['username_key'] = username_key
+
+    profiles = _load_user_profiles()
+    profile = profiles.get(username_key)
+    if not profile:
+        if username_key:
+            flask_session['pending_profile_username'] = username
+            flask_session['pending_profile_key'] = username_key
+        return redirect(url_for('onboarding'))
+
+    display_name = profile.get("username") or username
+
+    return render_template(
+        "upload.html",
+        stt_backend=AppConfig.STT_BACKEND,
+        username=display_name,
+        user_profile=profile,
+    )
 
 @app.route("/test")
 def test_mic():

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tell us about you - Blanca</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+            background: var(--color-background);
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: var(--color-text-primary);
+        }
+        .card {
+            width: min(720px, 100%);
+            background: var(--color-surface);
+            padding: 32px 40px;
+            border-radius: 18px;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+        }
+        h1 {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        p.subtitle {
+            margin-top: 0;
+            margin-bottom: 32px;
+            color: var(--color-text-secondary);
+        }
+        form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px 24px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--color-text-secondary);
+            margin-bottom: 6px;
+        }
+        input, select {
+            width: 100%;
+            padding: 11px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--color-border);
+            background: var(--color-surface-light);
+            font-size: 16px;
+            color: inherit;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        .actions {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 12px;
+        }
+        button[type="submit"] {
+            padding: 12px 24px;
+            border-radius: 10px;
+            border: none;
+            background: var(--color-primary);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        button[type="submit"]:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 40px rgba(59, 130, 246, 0.32);
+        }
+        .errors {
+            grid-column: 1 / -1;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #991b1b;
+            padding: 12px 16px;
+            border-radius: 10px;
+        }
+        .errors ul {
+            margin: 0;
+            padding-left: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Hi {{ username }}!</h1>
+        <p class="subtitle">Before we start, tell us a bit about yourself. This helps us track sessions consistently across participants.</p>
+        <form method="post" action="{{ url_for('onboarding') }}">
+            {% if errors %}
+            <div class="errors full-width">
+                <strong>We need a few more details:</strong>
+                <ul>
+                    {% for error in errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div>
+                <label for="first_name">First Name</label>
+                <input type="text" id="first_name" name="first_name" value="{{ form_data.first_name }}" required>
+            </div>
+            <div>
+                <label for="last_name">Last Name</label>
+                <input type="text" id="last_name" name="last_name" value="{{ form_data.last_name }}" required>
+            </div>
+            <div>
+                <label for="gender">Gender</label>
+                <input type="text" id="gender" name="gender" value="{{ form_data.gender }}" placeholder="e.g., Woman">
+            </div>
+            <div>
+                <label for="pronouns">Pronouns</label>
+                <input type="text" id="pronouns" name="pronouns" value="{{ form_data.pronouns }}" placeholder="e.g., she/her">
+            </div>
+            <div>
+                <label for="ethnicity">Ethnicity</label>
+                <input type="text" id="ethnicity" name="ethnicity" value="{{ form_data.ethnicity }}" required>
+            </div>
+            <div>
+                <label for="age_range">Age Range</label>
+                <select id="age_range" name="age_range">
+                    <option value="">Prefer not to say</option>
+                    {% set ranges = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"] %}
+                    {% for age in ranges %}
+                    <option value="{{ age }}" {% if form_data.age_range == age %}selected{% endif %}>{{ age }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="full-width">
+                <label for="email">Email Address (will be hashed)</label>
+                <input type="email" id="email" name="email" value="{{ form_data.email }}" placeholder="participant@example.com" required>
+            </div>
+            <div class="actions">
+                <button type="submit">Save &amp; Continue</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

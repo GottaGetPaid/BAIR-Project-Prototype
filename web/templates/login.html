@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome - Blanca Voice Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: var(--color-background);
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: var(--color-text-primary);
+        }
+        .card {
+            width: min(420px, calc(100% - 32px));
+            background: var(--color-surface);
+            padding: 32px;
+            border-radius: 16px;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+        }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+        p {
+            margin: 0 0 24px;
+            color: var(--color-text-secondary);
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        input[type="text"] {
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--color-border);
+            background: var(--color-surface-light);
+            color: inherit;
+            font-size: 16px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+        }
+        button {
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: none;
+            background: var(--color-primary);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(59, 130, 246, 0.32);
+        }
+        .error {
+            color: #ef4444;
+            font-size: 14px;
+            margin-top: -8px;
+        }
+        .current-user {
+            margin-top: 12px;
+            font-size: 14px;
+            color: var(--color-text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Welcome to Blanca</h1>
+        <p>Enter a username to continue. Your session data will be grouped under this name.</p>
+        <form method="post" action="{{ url_for('login') }}">
+            <label for="username" class="subtle" style="font-size:14px;text-transform:uppercase;letter-spacing:0.08em;">Username</label>
+            <input type="text" id="username" name="username" placeholder="e.g., participant-01" autofocus required>
+            {% if error %}
+            <div class="error">{{ error }}</div>
+            {% endif %}
+            <button type="submit">Continue</button>
+        </form>
+        {% if current_user %}
+        <div class="current-user">Logged in previously as <strong>{{ current_user }}</strong>. <a href="{{ url_for('logout') }}" style="color:var(--color-primary);">Clear session</a></div>
+        {% endif %}
+    </div>
+</body>
+</html>

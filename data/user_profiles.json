@@ -10,7 +10,35 @@
     "email_hash": "b72846633b7e915fdf8d2301dccb71470ad7a46ece89f58278ace636266681cb",
     "email_hash_method": "sha256",
     "created_at": "2025-11-06T19:47:45.538738Z",
-    "updated_at": "2025-11-06T19:47:45.540409Z",
-    "sessions_completed": 0
+    "updated_at": "2025-11-06T23:49:46.733048Z",
+    "sessions_completed": 10
+  },
+  "jyang10": {
+    "username": "jyang10",
+    "first_name": "Justin",
+    "last_name": "Yang",
+    "gender": "Man",
+    "pronouns": "He Him",
+    "ethnicity": "Asian",
+    "age_range": "",
+    "email_hash": "b72846633b7e915fdf8d2301dccb71470ad7a46ece89f58278ace636266681cb",
+    "email_hash_method": "sha256",
+    "created_at": "2025-11-06T23:57:35.478165Z",
+    "updated_at": "2025-11-06T23:58:44.283478Z",
+    "sessions_completed": 2
+  },
+  "jyang11": {
+    "username": "jyang11",
+    "first_name": "Justin",
+    "last_name": "Yang",
+    "gender": "Man",
+    "pronouns": "he/him",
+    "ethnicity": "Asian",
+    "age_range": "",
+    "email_hash": "b72846633b7e915fdf8d2301dccb71470ad7a46ece89f58278ace636266681cb",
+    "email_hash_method": "sha256",
+    "created_at": "2025-11-07T00:01:19.152716Z",
+    "updated_at": "2025-11-07T00:03:00.537652Z",
+    "sessions_completed": 2
   }
 }

@@ -35,6 +35,127 @@ body {
     overflow: hidden;
 }
 
+body.auth-body {
+    overflow: auto;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.auth-page {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 16px;
+    background: var(--bg);
+    gap: 24px;
+}
+
+.auth-card {
+    width: min(640px, 100%);
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 36px 40px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+}
+
+.auth-card h1 {
+    font-size: clamp(26px, 3vw, 36px);
+    margin: 0 0 8px;
+    color: var(--text);
+}
+
+.auth-subtitle {
+    margin: 0 0 28px;
+    color: var(--muted-text);
+    font-size: 15px;
+}
+
+.auth-top-bar {
+    width: min(640px, 100%);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.auth-form {
+    display: grid;
+    gap: 18px 22px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.auth-form label {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted-text);
+    margin-bottom: 6px;
+}
+
+.auth-input,
+.auth-select {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: var(--input-bg);
+    font-size: 16px;
+    color: var(--text);
+}
+
+.auth-input:focus,
+.auth-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
+}
+
+.auth-full-width {
+    grid-column: 1 / -1;
+}
+
+.auth-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.auth-errors {
+    grid-column: 1 / -1;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.32);
+    color: #991b1b;
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-size: 14px;
+}
+
+.auth-errors ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.auth-footer {
+    margin-top: 18px;
+    font-size: 14px;
+    color: var(--muted-text);
+}
+
+.auth-footer a {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.auth-footer a:hover {
+    text-decoration: underline;
+}
+
 /* Disclaimer banner */
 .disclaimer-banner {
     width: 100%;
@@ -115,6 +236,33 @@ body {
 .subtle { color: var(--muted-text); font-size: 13px; }
 .form-container { width: 100%; }
 .query-form-container { flex: 1; display: flex; flex-direction: column; }
+
+.query-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.session-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.session-indicator {
+    font-size: 13px;
+    color: var(--muted-text);
+}
+
+.session-controls .btn,
+.session-controls button {
+    padding: 6px 12px;
+    font-size: 13px;
+    line-height: 1.2;
+}
 .query-conversation {
     flex: 1;
     overflow-y: auto;

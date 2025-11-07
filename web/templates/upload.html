@@ -109,10 +109,13 @@
         <div class="left-panel">
             <div class="top-bar">
                 <div class="lhs-intro">
-                    <div class="title">Welcome to Blanca</div>
-                    <div class="subtle">Below are the tools available and an example question to get started.</div>
+                    <div class="title">Welcome, {{ user_profile.first_name or user_profile.username or username }}!</div>
+                    <div class="subtle">Participant: <strong id="participant-username">{{ username }}</strong> · Sessions completed: <span id="sessions-completed">{{ user_profile.sessions_completed or 0 }}</span> / <span id="session-target">{{ session_target }}</span></div>
                 </div>
-                <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
+                <div class="session-controls" style="gap:8px;">
+                    <button id="switch-user-btn" class="btn btn-ghost" title="Switch participant">Switch User</button>
+                    <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
+                </div>
             </div>
 
             <div id="tools-panel" style="margin-top: 8px;">
@@ -153,7 +156,12 @@
 
     <div class="right-panel">
         <div class="form-container query-form-container">
-            <h3>Query Interface</h3>
+            <div class="query-header">
+                <h3 id="query-interface-title">Query Interface <span id="session-indicator" class="session-indicator">Session {{ session_data.session_number if session_data else 1 }} of {{ session_target }}</span></h3>
+                <div class="session-controls">
+                    <button type="button" id="start-session-btn" class="btn btn-primary">Start New Session</button>
+                </div>
+            </div>
             <div id="query-conversation" class="query-conversation">
                 </div>
             
@@ -167,6 +175,15 @@
         <button id="save-chat-btn" class="btn" style="margin-top:10px;">Save Chat</button>
     </div>
 </div>
+
+    <script type="application/json" id="session-config">
+        {{ {
+            "session": session_data or {},
+            "sessionTarget": session_target,
+            "sessionsCompleted": user_profile.sessions_completed or 0,
+            "username": username
+        } | tojson }}
+    </script>
 
     <!-- Floating Tools button -->
     <!-- <button id="tools-fab" class="icon-btn" title="Tools & Raw JSON">🧰</button> -->
@@ -210,6 +227,149 @@
             }
         });
     })();
+
+    const sessionConfigEl = document.getElementById('session-config');
+    let sessionConfig = {};
+    if (sessionConfigEl) {
+        try {
+            sessionConfig = JSON.parse(sessionConfigEl.textContent || '{}');
+        } catch (err) {
+            console.warn('Failed to parse session config payload', err);
+        }
+    }
+
+    const initialSessionData = sessionConfig.session || {};
+    const studySessionTargetDefault = Number(sessionConfig.sessionTarget) || 10;
+    const initialSessionsCompleted = Number(sessionConfig.sessionsCompleted) || 0;
+    const participantUsernameInitial = (typeof sessionConfig.username === 'string' && sessionConfig.username.trim().length)
+        ? sessionConfig.username
+        : null;
+
+    let studySessionState = {
+        session_id: initialSessionData.session_id || null,
+        session_number: initialSessionData.session_number || 1,
+        sessions_completed: typeof initialSessionData.sessions_completed === 'number' ? initialSessionData.sessions_completed : initialSessionsCompleted,
+        session_target: initialSessionData.session_target || studySessionTargetDefault
+    };
+
+    if (!studySessionState.session_number) {
+        studySessionState.session_number = studySessionState.sessions_completed + 1;
+    }
+    if (!studySessionState.session_target) {
+        studySessionState.session_target = studySessionTargetDefault;
+    }
+
+    function generateStudySessionId() {
+        return 'session_' + new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_');
+    }
+
+    let sessionId = studySessionState.session_id || generateStudySessionId();
+    let promptNumber = 0;
+
+    const sessionIndicatorEl = document.getElementById('session-indicator');
+    const sessionsCompletedEl = document.getElementById('sessions-completed');
+    const sessionTargetEl = document.getElementById('session-target');
+    const startSessionBtn = document.getElementById('start-session-btn');
+    const switchUserBtn = document.getElementById('switch-user-btn');
+    const participantUsernameEl = document.getElementById('participant-username');
+    const queryInput = document.getElementById('query-input');
+
+    function updateSessionDisplays() {
+        if (sessionIndicatorEl) {
+            sessionIndicatorEl.textContent = `Session ${studySessionState.session_number} of ${studySessionState.session_target}`;
+        }
+        if (sessionsCompletedEl) {
+            sessionsCompletedEl.textContent = studySessionState.sessions_completed;
+        }
+        if (sessionTargetEl) {
+            sessionTargetEl.textContent = studySessionState.session_target;
+        }
+    }
+
+    updateSessionDisplays();
+    if (participantUsernameEl && participantUsernameInitial) {
+        participantUsernameEl.textContent = participantUsernameInitial;
+    }
+
+    switchUserBtn?.addEventListener('click', () => {
+        window.location.href = "{{ url_for('logout') }}";
+    });
+
+    function applyStudySessionPayload(sessionPayload) {
+        if (!sessionPayload) return;
+        studySessionState = {
+            session_id: sessionPayload.session_id || null,
+            session_number: sessionPayload.session_number || 1,
+            sessions_completed: typeof sessionPayload.sessions_completed === 'number' ? sessionPayload.sessions_completed : studySessionState.sessions_completed,
+            session_target: sessionPayload.session_target || studySessionState.session_target || studySessionTargetDefault
+        };
+        if (!studySessionState.session_number) {
+            studySessionState.session_number = studySessionState.sessions_completed + 1;
+        }
+        if (!studySessionState.session_target) {
+            studySessionState.session_target = studySessionTargetDefault;
+        }
+        sessionId = studySessionState.session_id || generateStudySessionId();
+        promptNumber = 0;
+        updateSessionDisplays();
+    }
+
+    function resetConversationForNewSession() {
+        const conversation = document.getElementById('query-conversation');
+        if (conversation) {
+            conversation.innerHTML = '';
+        }
+        conversationLog.length = 0;
+        latestUserPrompt = '';
+        updateLatestPromptPanel('');
+        renderFollowupExamples([]);
+        renderRelatedTopics([]);
+        sessionStart = new Date().toISOString();
+        promptNumber = 0;
+        hasUserPrompted = false;
+        if (queryInput) {
+            queryInput.value = '';
+            queryInput.placeholder = 'Enter your query or use the mic...';
+        }
+    }
+
+    async function handleStartNewSession() {
+        if (!startSessionBtn) return;
+        if (startSessionBtn.disabled) return;
+        const originalText = startSessionBtn.textContent;
+        startSessionBtn.disabled = true;
+        startSessionBtn.textContent = 'Refreshing…';
+        try {
+            const response = await fetch('/sessions/advance', { method: 'POST' });
+            const data = await response.json();
+            if (!response.ok || data.error) {
+                throw new Error(data.error || `Request failed (${response.status})`);
+            }
+            if (data.completed) {
+                if (data.redirect_url) {
+                    window.location.href = data.redirect_url;
+                } else {
+                    window.location.href = '/complete';
+                }
+                return;
+            }
+            if (data.session) {
+                applyStudySessionPayload(data.session);
+            }
+            if (typeof data.username === 'string' && participantUsernameEl) {
+                participantUsernameEl.textContent = data.username;
+            }
+            resetConversationForNewSession();
+        } catch (err) {
+            console.error('Failed to advance session', err);
+            alert(err.message || 'Unable to start a new session. Please try again.');
+        } finally {
+            startSessionBtn.disabled = false;
+            startSessionBtn.textContent = originalText;
+        }
+    }
+
+    startSessionBtn?.addEventListener('click', handleStartNewSession);
 
     // Track conversation log for saving later
     const conversationLog = [];
@@ -437,7 +597,7 @@
     // Render at load
     renderStartTopics();
     loadBFCLTools(); // Load BFCL tools on page load
-    fetch('{{ url_for('static', filename='data/example_functions.json') }}')
+    fetch("{{ url_for('static', filename='data/example_functions.json') }}")
         .then(r=>r.json())
         .then(data => { if (data && Array.isArray(data.topics)) buildKeywordTopicIndex(data.topics); })
         .catch(err => console.warn('Failed to load topic catalog', err));
@@ -733,10 +893,7 @@
     let hasUserPrompted = false; // Track if user has made their first prompt
 
     // --- Session tracking for organized recordings ---
-    const sessionId = 'session_' + new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '_');
-    let promptNumber = 0; // Track prompt number in this session
-    console.log(`Session started: ${sessionId}`);
-
+    // sessionId and promptNumber defined earlier via study session state
     // --- Logic for Deepgram Streaming STT ---
     let socket;
     let microphone;

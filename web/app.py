@@ -259,6 +259,47 @@ def _hash_email(email: str) -> str:
     return hashlib.sha256(email_norm.encode('utf-8')).hexdigest()
 
 
+def _to_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _get_session_target() -> int:
+    target = _to_int(getattr(AppConfig, "SESSION_TARGET", 10), 10)
+    return max(1, target)
+
+
+def _generate_session_id(username_key: str, session_number: int) -> str:
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    key = username_key or 'user'
+    return f"{key}_session_{session_number:02d}_{timestamp}"
+
+
+def _ensure_active_session(username_key: str, profile: dict, session_target: int) -> dict:
+    sessions_completed = _to_int(profile.get("sessions_completed"), 0)
+    expected_number = min(sessions_completed + 1, session_target)
+    active_session = flask_session.get('active_session') or {}
+    if active_session.get('session_number') != expected_number:
+        session_id = _generate_session_id(username_key, expected_number)
+        active_session = {
+            "session_id": session_id,
+            "session_number": expected_number,
+            "sessions_completed": sessions_completed,
+            "session_target": session_target,
+        }
+    else:
+        active_session = {
+            **active_session,
+            "sessions_completed": sessions_completed,
+            "session_target": session_target,
+        }
+    flask_session['active_session'] = active_session
+    flask_session.modified = True
+    return active_session
+
+
 def _normalize_topics(value) -> list[dict]:
     topics: list[dict] = []
     if isinstance(value, dict):
@@ -439,6 +480,7 @@ def index():
     if not username_key and username:
         username_key = _username_key(username)
         flask_session['username_key'] = username_key
+        flask_session.modified = True
 
     profiles = _load_user_profiles()
     profile = profiles.get(username_key)
@@ -448,6 +490,22 @@ def index():
             flask_session['pending_profile_key'] = username_key
         return redirect(url_for('onboarding'))
 
+    sessions_completed = _to_int(profile.get('sessions_completed'), 0)
+    if profile.get('sessions_completed') is None:
+        profile['sessions_completed'] = sessions_completed
+        profile['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        profiles[username_key] = profile
+        _save_user_profiles(profiles)
+
+    session_target = _get_session_target()
+
+    if sessions_completed >= session_target:
+        flask_session.pop('active_session', None)
+        flask_session.modified = True
+        return redirect(url_for('completion'))
+
+    active_session = _ensure_active_session(username_key, profile, session_target)
+
     display_name = profile.get("username") or username
 
     return render_template(
@@ -455,11 +513,15 @@ def index():
         stt_backend=AppConfig.STT_BACKEND,
         username=display_name,
         user_profile=profile,
+        session_data=active_session,
+        session_target=session_target,
     )
+
 
 @app.route("/test")
 def test_mic():
     return render_template("test_mic.html")
+
 
 # Removed unused /upload route - we use Deepgram streaming, no file uploads needed
 
@@ -661,6 +723,84 @@ def get_bfcl_tools():
         
     except Exception as e:
         return jsonify({"tools": [], "exampleQuestion": "", "error": str(e)}), 500
+
+
+@app.route('/sessions/advance', methods=['POST'])
+def advance_session():
+    username = flask_session.get('username')
+    username_key = flask_session.get('username_key')
+    if not username or not username_key:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    profiles = _load_user_profiles()
+    profile = profiles.get(username_key)
+    if not profile:
+        return jsonify({"error": "Profile not found"}), 404
+
+    session_target = _get_session_target()
+    sessions_completed = _to_int(profile.get('sessions_completed'), 0)
+
+    if sessions_completed < session_target:
+        sessions_completed += 1
+        profile['sessions_completed'] = sessions_completed
+        profile['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+        profiles[username_key] = profile
+        _save_user_profiles(profiles)
+
+    if sessions_completed >= session_target:
+        flask_session.pop('active_session', None)
+        flask_session.modified = True
+        return jsonify({
+            "completed": True,
+            "redirect_url": url_for('completion'),
+            "sessions_completed": sessions_completed,
+            "session_target": session_target,
+        }), 200
+
+    next_session_number = sessions_completed + 1
+    active_session = {
+        "session_id": _generate_session_id(username_key, next_session_number),
+        "session_number": next_session_number,
+        "sessions_completed": sessions_completed,
+        "session_target": session_target,
+    }
+    flask_session['active_session'] = active_session
+    flask_session.modified = True
+
+    return jsonify({
+        "completed": False,
+        "session": active_session,
+        "username": profile.get("username") or username,
+    }), 200
+
+
+@app.route('/complete')
+def completion():
+    username = flask_session.get('username')
+    if not username:
+        return redirect(url_for('login'))
+
+    username_key = flask_session.get('username_key')
+    profiles = _load_user_profiles() if username_key else {}
+    profile = profiles.get(username_key) if username_key else None
+
+    sessions_completed = _to_int(profile.get('sessions_completed'), 0) if profile else 0
+    session_target = _get_session_target()
+
+    if sessions_completed < session_target:
+        return redirect(url_for('index'))
+
+    flask_session.pop('active_session', None)
+    flask_session.modified = True
+
+    display_name = (profile.get('username') if profile else None) or username
+
+    return render_template(
+        'complete.html',
+        username=display_name,
+        sessions_completed=sessions_completed,
+        session_target=session_target,
+    )
 
 # ----------------------------
 # Save chat route

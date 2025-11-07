@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Welcome - Blanca Voice Assistant</title>
+    <title>All Sessions Complete</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
@@ -12,28 +12,11 @@
             <button id="theme-toggle" type="button" class="btn btn-ghost" title="Toggle dark mode">🌙</button>
         </div>
         <div class="auth-card">
-            <h1>Welcome to Blanca</h1>
-            <p class="auth-subtitle">Enter a username to continue. Your session data will be grouped under this name.</p>
-            <form method="post" action="{{ url_for('login') }}" class="auth-form">
-                <div class="auth-full-width">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" class="auth-input" placeholder="e.g., participant-01" autofocus required>
-                </div>
-                {% if error %}
-                <div class="auth-errors">
-                    <strong>{{ error }}</strong>
-                </div>
-                {% endif %}
-                <div class="auth-actions">
-                    <button type="submit" class="btn btn-primary">Continue</button>
-                </div>
-            </form>
-            {% if current_user %}
-            <div class="auth-footer">
-                Logged in previously as <strong>{{ current_user }}</strong>. 
-                <a href="{{ url_for('logout') }}">Clear session</a>
-            </div>
-            {% endif %}
+            <h1>Great job, {{ username }}! 🎉</h1>
+            <p class="auth-subtitle">
+                You’ve completed all {{ session_target }} sessions. Thank you for contributing to our study.
+            </p>
+            <a href="{{ url_for('logout') }}" class="btn btn-primary" style="width: 100%; text-align: center;">Switch User</a>
         </div>
     </div>
     <script>

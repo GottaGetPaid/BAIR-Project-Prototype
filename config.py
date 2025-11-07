@@ -21,3 +21,6 @@ class AppConfig:
     STT_BACKEND = os.getenv("STT_BACKEND", "whisper_local").lower()
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
+    # Study sessions
+    SESSION_TARGET = int(os.getenv("SESSION_TARGET", "2"))
+

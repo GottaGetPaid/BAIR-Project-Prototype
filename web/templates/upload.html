@@ -109,7 +109,6 @@
         <div class="left-panel">
             <div class="top-bar">
                 <div class="lhs-intro">
-                    <div class="title">Welcome, {{ user_profile.first_name or user_profile.username or username }}!</div>
                     <div class="subtle">Participant: <strong id="participant-username">{{ username }}</strong> · Sessions completed: <span id="sessions-completed">{{ user_profile.sessions_completed or 0 }}</span> / <span id="session-target">{{ session_target }}</span></div>
                 </div>
                 <div class="session-controls" style="gap:8px;">
@@ -122,22 +121,6 @@
                 <div class="section-title">Available Tools</div>
                 <div id="tools-list" class="tools-list">
                     <p class="subtle" style="padding: 8px;">Loading tools...</p>
-                </div>
-            </div>
-
-            <div id="prompt-ideas-panel" style="margin-top: 12px;">
-                <div class="section-title">Prompt Ideas</div>
-                <div id="prompt-ideas-content" style="padding: 12px; background: var(--color-surface-light); border-radius: 8px;">
-                    <ul id="prompt-ideas-list" class="prompt-ideas-list" style="list-style: disc; margin-left: 18px; font-size: 13px; color: var(--color-text-secondary);">
-                        <li class="subtle">Loading ideas...</li>
-                    </ul>
-                    <button id="toggle-example-btn" class="btn btn-ghost" style="margin-top: 8px; font-size: 12px; padding: 6px 12px;">Need more guidance?</button>
-                    <div id="example-question-wrapper" class="hidden" style="margin-top: 8px;">
-                        <div class="section-subtitle" style="font-size: 12px; text-transform: uppercase; color: var(--color-text-secondary); letter-spacing: 0.06em;">Sample Prompt</div>
-                        <div id="example-question-content" class="sample-prompt-text" style="padding: 10px; background: rgba(0,0,0,0.05); border-radius: 6px; font-size: 13px; font-style: italic; color: var(--color-text-secondary);">
-                            <p class="subtle">Loading...</p>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -158,6 +141,7 @@
         <div class="form-container query-form-container">
             <div class="query-header">
                 <h3 id="query-interface-title">Query Interface <span id="session-indicator" class="session-indicator">Session {{ session_data.session_number if session_data else 1 }} of {{ session_target }}</span></h3>
+                <div id="example-prompt-inline" class="example-prompt-inline subtle"></div>
                 <div class="session-controls">
                     <button type="button" id="start-session-btn" class="btn btn-primary">Start New Session</button>
                 </div>
@@ -474,73 +458,57 @@
         if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try asking: “${startSamplePrompt}”` : '';
     }
     // Load and display BFCL tools
-    function generatePromptIdeas(tools) {
-        const ideas = [];
-        if (!tools || tools.length === 0) {
-            return [
-                'Describe a personal goal or plan and ask the assistant how it might use the available tools to help.',
-                'Invent a scenario and challenge the assistant to figure out which tool (if any) should be used.',
-                'Ask for suggestions first, then refine your request into a detailed plan.'
-            ];
-        }
-
-        const toolNames = tools.map(t => t.name.replace(/_/g, ' '));
-        const toolDescriptions = tools.map(t => t.description || '').map(desc => desc.charAt(0).toLowerCase() + desc.slice(1));
-
-        ideas.push(`Describe your own situation where the assistant should ${toolDescriptions[0]}. Focus on the details that matter to you.`);
-
-        if (toolNames.length >= 2) {
-            ideas.push(`Create a challenge that makes the assistant combine <strong>${toolNames[0]}</strong> and <strong>${toolNames[1]}</strong> in a single response.`);
-        }
-
-        ideas.push('Invite the assistant to brainstorm multiple approaches before choosing which tool (if any) to call.');
-
-        return ideas;
-    }
-
-    function renderPromptIdeas(ideas) {
-        const listEl = document.getElementById('prompt-ideas-list');
-        if (!listEl) return;
-
-        listEl.innerHTML = '';
-        ideas.forEach(text => {
-            const li = document.createElement('li');
-            li.innerHTML = text;
-            listEl.appendChild(li);
-        });
-    }
-
-    function loadBFCLTools() {
-        fetch('/get_bfcl_tools')
+    function loadTinyAgentData() {
+        fetch('/get_tiny_agent_data')
             .then(r => r.json())
             .then(data => {
+                const examplePromptInline = document.getElementById('example-prompt-inline');
                 const toolsList = document.getElementById('tools-list');
-                const exampleQuestionContent = document.getElementById('example-question-content');
-                const toggleExampleBtn = document.getElementById('toggle-example-btn');
                 
+                if (examplePromptInline) {
+                    examplePromptInline.textContent = data.exampleQuestion ? `Sample prompt: ${data.exampleQuestion}` : '';
+                }
+
+                const usedSet = new Set((data.usedTools || []).map((name) => String(name)));
+
                 if (data.tools && data.tools.length > 0) {
-                    // Store tools for metadata tracking
-                    currentToolsShown = data.tools.map(t => ({
+                    const sortedTools = [...data.tools].sort((a, b) => {
+                        const aUsed = usedSet.has(a.name);
+                        const bUsed = usedSet.has(b.name);
+                        if (aUsed === bUsed) {
+                            return a.name.localeCompare(b.name);
+                        }
+                        return aUsed ? -1 : 1;
+                    });
+
+                    currentToolsShown = sortedTools.map(t => ({
                         name: t.name,
                         description: t.description
                     }));
-                    
+
                     toolsList.innerHTML = '';
-                    data.tools.forEach(tool => {
+                    sortedTools.forEach(tool => {
                         const toolCard = document.createElement('div');
-                        toolCard.className = 'tool-card';
-                        toolCard.style.cssText = 'padding: 12px; margin-bottom: 8px; background: var(--color-surface-light); border-radius: 8px; border-left: 3px solid var(--color-primary);';
-                        
+                        const isHighlighted = usedSet.has(tool.name);
+                        toolCard.className = `tool-card${isHighlighted ? ' tool-card-highlight' : ''}`;
+
                         const toolName = document.createElement('div');
-                        toolName.style.cssText = 'font-weight: 600; margin-bottom: 4px; color: var(--color-primary);';
+                        toolName.className = 'tool-card-title';
                         toolName.textContent = tool.name;
-                        
+
                         const toolDesc = document.createElement('div');
-                        toolDesc.style.cssText = 'font-size: 14px; color: var(--color-text-secondary);';
+                        toolDesc.className = 'tool-card-description';
                         toolDesc.textContent = tool.description;
-                        
+
+                        const argList = Array.isArray(tool.arguments) ? tool.arguments : [];
                         toolCard.appendChild(toolName);
                         toolCard.appendChild(toolDesc);
+                        if (argList.length) {
+                            const argsEl = document.createElement('div');
+                            argsEl.className = 'tool-card-args';
+                            argsEl.textContent = `Args: ${argList.map(arg => arg.name || '').filter(Boolean).join(', ')}`;
+                            toolCard.appendChild(argsEl);
+                        }
                         toolsList.appendChild(toolCard);
                     });
                 } else {
@@ -548,55 +516,20 @@
                     currentToolsShown = [];
                 }
 
-                fetchedExamplePrompt = data.exampleQuestion || '';
-                exampleQuestionContent.innerHTML = '<p class="subtle">Click the button above to view a sample prompt.</p>';
-                exampleRevealed = false;
-                currentExamplePrompt = '';
-                if (toggleExampleBtn) toggleExampleBtn.textContent = 'Need more guidance?';
-
-                currentPromptIdeas = generatePromptIdeas(currentToolsShown);
-                renderPromptIdeas(currentPromptIdeas);
+                currentExamplePrompt = data.exampleQuestion || '';
+                currentPromptIdeas = [];
             })
             .catch(err => {
-                console.warn('Failed to load BFCL tools', err);
+                console.warn('Failed to load Tiny Agent data', err);
                 document.getElementById('tools-list').innerHTML = '<p class="subtle" style="padding: 8px;">Error loading tools</p>';
-                document.getElementById('example-question-content').innerHTML = '<p class="subtle">Error loading example</p>';
-                renderPromptIdeas([
-                    'Think of a real task you need help with and describe it in your own words.',
-                    'Ask the assistant to suggest possible tool workflows before committing to one.',
-                    'Focus on outcomes you care about and invite the assistant to figure out the steps.'
-                ]);
+                currentExamplePrompt = '';
+                currentPromptIdeas = [];
             });
     }
 
-    // Handle example prompt reveal
-    document.getElementById('toggle-example-btn')?.addEventListener('click', () => {
-        const wrapper = document.getElementById('example-question-wrapper');
-        const exampleContent = document.getElementById('example-question-content');
-        const toggleBtn = document.getElementById('toggle-example-btn');
-        if (!wrapper || !exampleContent || !toggleBtn) return;
-
-        const isHidden = wrapper.classList.contains('hidden');
-        if (isHidden) {
-            wrapper.classList.remove('hidden');
-            toggleBtn.textContent = 'Hide sample prompt';
-            exampleContent.innerHTML = fetchedExamplePrompt
-                ? `<p>"${fetchedExamplePrompt}"</p>`
-                : '<p class="subtle">No example available</p>';
-            currentExamplePrompt = fetchedExamplePrompt || '';
-            exampleRevealed = true;
-        } else {
-            wrapper.classList.add('hidden');
-            toggleBtn.textContent = 'Need more guidance?';
-            exampleContent.innerHTML = '<p class="subtle">Click the button above to view a sample prompt.</p>';
-            currentExamplePrompt = '';
-            exampleRevealed = false;
-        }
-    });
-    
     // Render at load
     renderStartTopics();
-    loadBFCLTools(); // Load BFCL tools on page load
+    loadTinyAgentData(); // Load Tiny Agent tools & prompt on page load
     fetch("{{ url_for('static', filename='data/example_functions.json') }}")
         .then(r=>r.json())
         .then(data => { if (data && Array.isArray(data.topics)) buildKeywordTopicIndex(data.topics); })
@@ -910,9 +843,7 @@
     
     // Track context metadata (tools shown, example prompt)
     let currentToolsShown = [];
-    let fetchedExamplePrompt = '';
     let currentExamplePrompt = '';
-    let exampleRevealed = false;
     let currentPromptIdeas = [];
     
     async function startDeepgramStreaming() {

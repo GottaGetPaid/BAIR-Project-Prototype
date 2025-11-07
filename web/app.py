@@ -8,6 +8,7 @@ import os
 import json
 import re
 import hashlib
+import random
 from collections import Counter
 try:
     import google.generativeai as genai
@@ -74,6 +75,10 @@ MODEL_PROVIDER_CACHE = None
 TOPIC_DATA_PATH = os.path.join(current_dir, 'static', 'data', 'example_functions.json')
 TOPIC_CATALOG_CACHE = None
 TOPIC_INDEX_CACHE = None
+TINY_AGENT_TOOLS_PATH = os.path.join(parent_dir, 'queries', 'tiny_agent_test_unique_tools.jsonl')
+TINY_AGENT_DATA_PATH = os.path.join(parent_dir, 'queries', 'tiny_agent_test_cleaned.jsonl')
+TINY_AGENT_TOOLS_CACHE: list[dict] | None = None
+TINY_AGENT_ENTRIES_CACHE: list[dict] | None = None
 DEFAULT_TOPICS = [
     {"id": "travel", "title": "Travel", "description": "Flights, hotels, itineraries."},
     {"id": "science", "title": "Science", "description": "Facts, summaries, lookups."},
@@ -615,6 +620,122 @@ def _extract_question_text(question_field) -> str:
     except Exception:
         return ""
 
+
+USED_TOOL_PATTERN = re.compile(r"^\s*([A-Za-z0-9_]+)\s*\(")
+
+
+def _load_tiny_agent_tools() -> list[dict]:
+    global TINY_AGENT_TOOLS_CACHE
+    if TINY_AGENT_TOOLS_CACHE is not None:
+        return [dict(item) for item in TINY_AGENT_TOOLS_CACHE]
+
+    if not os.path.exists(TINY_AGENT_TOOLS_PATH):
+        return []
+
+    tools: list[dict] = []
+    try:
+        with open(TINY_AGENT_TOOLS_PATH, 'r', encoding='utf-8') as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                tool_info = {
+                    "name": record.get('function_name') or record.get('name'),
+                    "description": record.get('description') or '',
+                    "arguments": record.get('arguments') or [],
+                }
+                    
+                if tool_info["name"]:
+                    tools.append(tool_info)
+    except OSError:
+        tools = []
+
+    TINY_AGENT_TOOLS_CACHE = tools
+    return [dict(item) for item in tools]
+
+
+def _load_tiny_agent_entries() -> list[dict]:
+    global TINY_AGENT_ENTRIES_CACHE
+    if TINY_AGENT_ENTRIES_CACHE is not None:
+        return TINY_AGENT_ENTRIES_CACHE
+
+    entries: list[dict] = []
+    if not os.path.exists(TINY_AGENT_DATA_PATH):
+        return entries
+
+    try:
+        with open(TINY_AGENT_DATA_PATH, 'r', encoding='utf-8') as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        entries = []
+
+    TINY_AGENT_ENTRIES_CACHE = entries
+    return entries
+
+
+def _extract_used_tools(function_calls) -> list[str]:
+    if not isinstance(function_calls, list):
+        return []
+
+    used: list[str] = []
+    for call in function_calls:
+        if not isinstance(call, str):
+            continue
+        match = re.match(r"^\s*([A-Za-z0-9_]+)\s*\(", call)
+        if not match:
+            continue
+        fn_name = match.group(1)
+        if not fn_name or fn_name.lower() == 'join':
+            continue
+        if fn_name not in used:
+            used.append(fn_name)
+    return used
+
+
+def _build_tiny_agent_payload() -> tuple[dict, int]:
+    tools = _load_tiny_agent_tools()
+    entries = _load_tiny_agent_entries()
+
+    if not tools:
+        return {
+            "tools": [],
+            "exampleQuestion": "",
+            "usedTools": [],
+            "entryId": "",
+            "error": "Tiny Agent tools file not found"
+        }, 404
+
+    if not entries:
+        return {
+            "tools": tools,
+            "exampleQuestion": "",
+            "usedTools": [],
+            "entryId": "",
+            "error": "Tiny Agent dataset not found"
+        }, 404
+
+    selected_entry = random.choice(entries)
+    example_question = _extract_question_text(selected_entry.get('question'))
+    used_tools = _extract_used_tools(selected_entry.get('ground_truth_function_calls'))
+
+    return {
+        "tools": tools,
+        "exampleQuestion": example_question or "",
+        "usedTools": used_tools,
+        "entryId": selected_entry.get('id') or "",
+    }, 200
+
 @app.route('/upload_json', methods=['POST'])
 def upload_json():
     if 'file' not in request.files: return jsonify({"error": "No file part"}), 400
@@ -672,57 +793,18 @@ def related_topics():
     topics = _score_topics(prompt)
     return jsonify({"topics": topics, "followUps": [], "source": "fallback"}), 200
 
+@app.route('/get_tiny_agent_data', methods=['GET'])
+def get_tiny_agent_data():
+    payload, status = _build_tiny_agent_payload()
+    return jsonify(payload), status
+
+
 @app.route('/get_bfcl_tools', methods=['GET'])
-def get_bfcl_tools():
-    """Load BFCL tools from queries folder and return sample tools with example question."""
-    import random
-    
-    bfcl_path = os.path.join(parent_dir, 'queries', 'BFCL_v4_parallel_multiple.jsonl')
-    
-    # If BFCL file doesn't exist, return defaults
-    if not os.path.exists(bfcl_path):
-        return jsonify({"tools": [], "exampleQuestion": "", "error": "BFCL file not found"}), 404
-    
-    try:
-        # Load all entries from BFCL
-        entries = []
-        with open(bfcl_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    entries.append(json.loads(line))
-        
-        if not entries:
-            return jsonify({"tools": [], "exampleQuestion": ""}), 200
-        
-        # Pick a random entry to get example question and tools
-        selected_entry = random.choice(entries)
-        
-        # Extract example question
-        example_question = ""
-        if selected_entry.get('question') and len(selected_entry['question']) > 0:
-            if len(selected_entry['question'][0]) > 0:
-                example_question = selected_entry['question'][0][0].get('content', '')
-        
-        # Extract tools/functions
-        tools = []
-        if selected_entry.get('function'):
-            for func in selected_entry['function'][:3]:  # Limit to 3 tools
-                tool_info = {
-                    "name": func.get('name', 'Unknown'),
-                    "description": func.get('description', ''),
-                    "parameters": func.get('parameters', {})
-                }
-                tools.append(tool_info)
-        
-        return jsonify({
-            "tools": tools,
-            "exampleQuestion": example_question,
-            "entryId": selected_entry.get('id', '')
-        }), 200
-        
-    except Exception as e:
-        return jsonify({"tools": [], "exampleQuestion": "", "error": str(e)}), 500
+def get_bfcl_tools():  # backward compatibility
+    payload, status = _build_tiny_agent_payload()
+    if status != 200:
+        payload.setdefault('error', 'Tiny Agent resources unavailable')
+    return jsonify(payload), status
 
 
 @app.route('/sessions/advance', methods=['POST'])

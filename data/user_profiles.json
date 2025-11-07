@@ -40,5 +40,19 @@
     "created_at": "2025-11-07T00:01:19.152716Z",
     "updated_at": "2025-11-07T00:03:00.537652Z",
     "sessions_completed": 2
+  },
+  "jyang3": {
+    "username": "jyang3",
+    "first_name": "J",
+    "last_name": "Y",
+    "gender": "M",
+    "pronouns": "He",
+    "ethnicity": "A",
+    "age_range": "",
+    "email_hash": "b72846633b7e915fdf8d2301dccb71470ad7a46ece89f58278ace636266681cb",
+    "email_hash_method": "sha256",
+    "created_at": "2025-11-07T00:23:34.037092Z",
+    "updated_at": "2025-11-07T00:23:34.037965Z",
+    "sessions_completed": 0
   }
 }

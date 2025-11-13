@@ -773,8 +773,8 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
 }
 
 .modal.comment-modal {
-    width: min(420px, 92%);
-    padding: 18px 20px 18px;
+    width: min(520px, 92%);
+    padding: 22px 24px 20px;
     display: flex;
     flex-direction: column;
     gap: 18px;
@@ -782,7 +782,7 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
 
 .comment-modal-body {
     display: grid;
-    gap: 12px;
+    gap: 14px;
 }
 
 .comment-label {
@@ -795,7 +795,8 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
 
 .comment-textarea {
     width: 100%;
-    min-height: 90px;
+    min-height: 96px;
+    box-sizing: border-box;
     resize: vertical;
     border-radius: 12px;
     border: 1px solid var(--panel-border);

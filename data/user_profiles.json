@@ -110,5 +110,19 @@
     "created_at": "2025-11-13T04:57:22.088663Z",
     "updated_at": "2025-11-13T04:58:01.003504Z",
     "sessions_completed": 2
+  },
+  "nandan": {
+    "username": "nandan",
+    "first_name": "nandan",
+    "last_name": "diwan",
+    "gender": "man",
+    "pronouns": "he",
+    "ethnicity": "indian",
+    "age_range": "",
+    "email_hash": "de853bcbd8b753821b0d9f3f8b9213d1274e3573cd81142238f665e22d13a86c",
+    "email_hash_method": "sha256",
+    "created_at": "2025-11-13T05:01:46.551842Z",
+    "updated_at": "2025-11-13T05:01:46.552376Z",
+    "sessions_completed": 0
   }
 }

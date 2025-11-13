@@ -117,10 +117,27 @@
                 </div>
             </div>
 
-            <div id="tools-panel" style="margin-top: 8px;">
-                <div class="section-title">Available Tools</div>
-                <div id="tools-list" class="tools-list">
-                    <p class="subtle" style="padding: 8px;">Loading tools...</p>
+            <div id="tools-panel" class="tools-panel">
+                <div class="tools-heading">Tools &amp; tips</div>
+                <div id="tools-dropdown" class="tools-dropdown">
+                    <details id="used-tools-details">
+                        <summary>Used tools <span id="used-tools-count" class="count-pill">0</span></summary>
+                        <div id="used-tools-list" class="tool-list-grid"></div>
+                    </details>
+                    <details id="unused-tools-details">
+                        <summary>Unused tools <span id="unused-tools-count" class="count-pill">0</span></summary>
+                        <div id="unused-tools-list" class="tool-list-grid"></div>
+                    </details>
+                    <div class="tool-guidance">
+                        <div class="tool-guidance-title">Before you start</div>
+                        <ul class="tool-guidance-list">
+                            <li> Use the blue button the right hand side to begin your conversation</li>
+                            <li>You may use the example prompt and available tools as inspiration for your prompt</li>
+                            <li>Keep each conversation concise—aim for 3 to 4 turns, the language model is not suited for long, complex instructions (it will not physically do the tasks you request)</li>
+                            <li>It's fine if the voice model messes up the transcription. You may start a new sesion or continue going. The goal is to capture the voice data.</li>
+                            <li>If you accidentally said something you wish does not become public, please use our comment feature and we will remove this session from the training data.</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 
@@ -149,10 +166,14 @@
             <div id="query-conversation" class="query-conversation">
                 </div>
             
-            <div class="voice-input-container" style="display: flex; justify-content: center; align-items: center; padding: 40px;">
-                <button type="button" id="mic-btn" class="mic-btn-large" title="Press to speak">
-                    <div class="voice-level-indicator"></div>
-                </button>
+            <div class="voice-input-container" style="display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px; gap: 14px;">
+                <div class="mic-instruction subtle">Press the button to start recording.</div>
+                <div class="mic-action-row">
+                    <button type="button" id="mic-btn" class="mic-btn-large" title="Press to speak">
+                        <div class="voice-level-indicator"></div>
+                    </button>
+                    <button type="button" id="comment-btn" class="comment-btn" title="Add a session comment">Add Comment</button>
+                </div>
             </div>
         </div>
 
@@ -191,6 +212,26 @@
                 <button id="toggle-raw-btn" class="btn btn-ghost" style="padding: 4px 8px; font-size: 12px;">Show</button>
             </div>
             <pre id="json-content" class="hidden"></pre>
+        </div>
+    </div>
+
+    <!-- Comment modal -->
+    <div id="comment-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="comment-modal-title">
+        <div class="modal comment-modal">
+            <div class="modal-header">
+                <div class="modal-title" id="comment-modal-title">Session Comments</div>
+                <button id="comment-modal-close" class="icon-btn" aria-label="Close comment dialog">✖</button>
+            </div>
+            <div class="comment-modal-body">
+                <div id="comment-list" class="comment-list"></div>
+                <label for="comment-textarea" class="comment-label">Add a new comment</label>
+                <textarea id="comment-textarea" class="comment-textarea" rows="4" placeholder="Share feedback, notes, or reminders..."></textarea>
+                <div id="comment-error" class="comment-error hidden" role="alert">Please enter a comment before saving.</div>
+            </div>
+            <div class="comment-modal-actions">
+                <button id="comment-cancel-btn" class="btn btn-ghost">Cancel</button>
+                <button id="comment-save-btn" class="btn btn-primary">Save Comment</button>
+            </div>
         </div>
     </div>
 <script>
@@ -257,6 +298,15 @@
     const switchUserBtn = document.getElementById('switch-user-btn');
     const participantUsernameEl = document.getElementById('participant-username');
     const queryInput = document.getElementById('query-input');
+    const commentBtn = document.getElementById('comment-btn');
+    const commentModal = document.getElementById('comment-modal');
+    const commentModalClose = document.getElementById('comment-modal-close');
+    const commentTextarea = document.getElementById('comment-textarea');
+    const commentSaveBtn = document.getElementById('comment-save-btn');
+    const commentCancelBtn = document.getElementById('comment-cancel-btn');
+    const commentListEl = document.getElementById('comment-list');
+    const commentErrorEl = document.getElementById('comment-error');
+    let sessionComments = [];
 
     function updateSessionDisplays() {
         if (sessionIndicatorEl) {
@@ -298,12 +348,110 @@
         updateSessionDisplays();
     }
 
+    function renderSessionComments() {
+        if (!commentListEl) return;
+        commentListEl.innerHTML = '';
+        if (!sessionComments.length) {
+            const empty = document.createElement('div');
+            empty.className = 'comment-empty';
+            empty.textContent = 'No comments added yet.';
+            commentListEl.appendChild(empty);
+            return;
+        }
+
+        sessionComments.forEach((comment, index) => {
+            const card = document.createElement('div');
+            card.className = 'comment-card';
+
+            const meta = document.createElement('div');
+            meta.className = 'comment-meta';
+            const when = comment.timestamp ? new Date(comment.timestamp).toLocaleString() : '';
+            meta.textContent = `Comment ${index + 1}${when ? ` · ${when}` : ''}`;
+
+            const text = document.createElement('div');
+            text.className = 'comment-text';
+            text.textContent = comment.text;
+
+            card.appendChild(meta);
+            card.appendChild(text);
+            commentListEl.appendChild(card);
+        });
+        commentListEl.scrollTop = commentListEl.scrollHeight;
+    }
+
+    function updateCommentButton() {
+        if (!commentBtn) return;
+        const count = sessionComments.length;
+        const label = count ? `Add Comment (${count})` : 'Add Comment';
+        commentBtn.textContent = label;
+        if (count) {
+            const helper = `${count} comment${count === 1 ? '' : 's'} saved`;
+            commentBtn.setAttribute('aria-label', `Add another comment. ${helper}.`);
+            commentBtn.setAttribute('title', `Add another comment (${helper})`);
+        } else {
+            commentBtn.setAttribute('aria-label', 'Add a session comment');
+            commentBtn.setAttribute('title', 'Add a session comment');
+        }
+        renderSessionComments();
+    }
+
+    function openCommentModal() {
+        if (!commentModal) return;
+        commentModal.classList.add('show');
+        commentModal.setAttribute('aria-hidden', 'false');
+        if (commentTextarea) {
+            commentTextarea.value = '';
+            commentTextarea.removeAttribute('aria-invalid');
+            setTimeout(() => commentTextarea.focus(), 50);
+        }
+        if (commentErrorEl) commentErrorEl.classList.add('hidden');
+        renderSessionComments();
+    }
+
+    function closeCommentModal() {
+        if (!commentModal) return;
+        commentModal.classList.remove('show');
+        commentModal.setAttribute('aria-hidden', 'true');
+        if (commentTextarea) {
+            commentTextarea.blur();
+            commentTextarea.value = '';
+            commentTextarea.removeAttribute('aria-invalid');
+        }
+        if (commentErrorEl) commentErrorEl.classList.add('hidden');
+    }
+
+    function handleCommentSave() {
+        if (!commentTextarea) return;
+        const raw = commentTextarea.value || '';
+        const trimmed = raw.trim();
+        if (!trimmed) {
+            if (commentErrorEl) commentErrorEl.classList.remove('hidden');
+            commentTextarea.setAttribute('aria-invalid', 'true');
+            commentTextarea.focus();
+            return;
+        }
+        const now = new Date().toISOString();
+        sessionComments.push({
+            id: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : `comment_${Date.now()}`,
+            text: trimmed,
+            timestamp: now
+        });
+        if (commentErrorEl) commentErrorEl.classList.add('hidden');
+        commentTextarea.value = '';
+        commentTextarea.removeAttribute('aria-invalid');
+        updateCommentButton();
+        commentTextarea.focus();
+    }
+
     function resetConversationForNewSession() {
         const conversation = document.getElementById('query-conversation');
         if (conversation) {
             conversation.innerHTML = '';
         }
         conversationLog.length = 0;
+        sessionComments = [];
+    closeCommentModal();
+        updateCommentButton();
         latestUserPrompt = '';
         updateLatestPromptPanel('');
         renderFollowupExamples([]);
@@ -315,6 +463,7 @@
             queryInput.value = '';
             queryInput.placeholder = 'Enter your query or use the mic...';
         }
+        refreshRandomInstruction();
     }
 
     async function handleStartNewSession() {
@@ -367,6 +516,10 @@
     let keywordTopicItems = [];
     let relatedFetchToken = 0;
 
+    let currentToolsShown = [];
+    let currentExamplePrompt = '';
+    let currentPromptIdeas = [];
+
     // Modal handling and raw JSON toggler (modal)
     const toolsFab = document.getElementById('tools-fab');
     const toolsModal = document.getElementById('tools-modal');
@@ -416,6 +569,30 @@
         'What is the capital of Brazil and two facts about it?',
         'Compare the MacBook Air M2 vs. Dell XPS 13 for programming and battery life.'
     ];
+    const usedToolsDetails = document.getElementById('used-tools-details');
+    const unusedToolsDetails = document.getElementById('unused-tools-details');
+    const usedToolsListEl = document.getElementById('used-tools-list');
+    const unusedToolsListEl = document.getElementById('unused-tools-list');
+    const usedToolsCountEl = document.getElementById('used-tools-count');
+    const unusedToolsCountEl = document.getElementById('unused-tools-count');
+    const randomInstructionEl = document.getElementById('instruction-random-example');
+    const examplePromptInline = document.getElementById('example-prompt-inline');
+
+    function refreshRandomInstruction() {
+        if (!randomInstructionEl) return;
+        const candidates = [];
+        const promptSamples = currentPromptIdeas.filter(Boolean);
+        if (promptSamples.length) candidates.push(...promptSamples);
+        if (currentExamplePrompt) candidates.push(currentExamplePrompt);
+        if (!candidates.length) candidates.push(...SAMPLE_PROMPTS);
+        const unique = [...new Set(candidates.filter(Boolean))];
+        if (!unique.length) return;
+        const pick = unique[Math.floor(Math.random() * unique.length)];
+        randomInstructionEl.textContent = `Try asking: ${pick}`;
+    }
+
+    refreshRandomInstruction();
+
     const TOPIC_SYNONYM_MAP = {
         physics: ['physics', 'mechanics', 'mechanic', 'quantum', 'gravity', 'force', 'forces', 'energy', 'motion', 'optics', 'electromagnetism', 'relativity', 'thermodynamics', 'waves'],
         search: ['search', 'lookup', 'google', 'bing', 'find', 'discover', 'locate', 'query', 'information', 'research'],
@@ -457,78 +634,119 @@
         const sampleEl = document.getElementById('start-sample-prompt');
         if (sampleEl) sampleEl.textContent = startSamplePrompt ? `Try asking: “${startSamplePrompt}”` : '';
     }
+
+    function renderToolGroup(listEl, tools, emptyMessage, highlightCards = false) {
+        if (!listEl) return;
+        listEl.innerHTML = '';
+        if (!Array.isArray(tools) || tools.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'subtle';
+            empty.style.padding = '8px 4px';
+            empty.textContent = emptyMessage;
+            listEl.appendChild(empty);
+            return;
+        }
+
+        tools.forEach((tool) => {
+            const toolCard = document.createElement('div');
+            toolCard.className = `tool-card${highlightCards ? ' tool-card-highlight' : ''}`;
+
+            const toolName = document.createElement('div');
+            toolName.className = 'tool-card-title';
+            toolName.textContent = (tool && tool.name) ? tool.name : 'Unnamed tool';
+
+            const toolDesc = document.createElement('div');
+            toolDesc.className = 'tool-card-description';
+            toolDesc.textContent = (tool && tool.description) ? tool.description : '';
+
+            toolCard.appendChild(toolName);
+            toolCard.appendChild(toolDesc);
+
+            const argList = tool && Array.isArray(tool.arguments)
+                ? tool.arguments.map(arg => arg.name || '').filter(Boolean)
+                : [];
+            if (argList.length) {
+                const argsEl = document.createElement('div');
+                argsEl.className = 'tool-card-args';
+                argsEl.textContent = `Args: ${argList.join(', ')}`;
+                toolCard.appendChild(argsEl);
+            }
+
+            listEl.appendChild(toolCard);
+        });
+    }
+
     // Load and display BFCL tools
     function loadTinyAgentData() {
         fetch('/get_tiny_agent_data')
             .then(r => r.json())
             .then(data => {
-                const examplePromptInline = document.getElementById('example-prompt-inline');
-                const toolsList = document.getElementById('tools-list');
-                
-                if (examplePromptInline) {
-                    examplePromptInline.textContent = data.exampleQuestion ? `Sample prompt: ${data.exampleQuestion}` : '';
-                }
-
-                const usedSet = new Set((data.usedTools || []).map((name) => String(name)));
-
-                if (data.tools && data.tools.length > 0) {
-                    const sortedTools = [...data.tools].sort((a, b) => {
-                        const aUsed = usedSet.has(a.name);
-                        const bUsed = usedSet.has(b.name);
-                        if (aUsed === bUsed) {
-                            return a.name.localeCompare(b.name);
-                        }
-                        return aUsed ? -1 : 1;
-                    });
-
-                    currentToolsShown = sortedTools.map(t => ({
-                        name: t.name,
-                        description: t.description
-                    }));
-
-                    toolsList.innerHTML = '';
-                    sortedTools.forEach(tool => {
-                        const toolCard = document.createElement('div');
-                        const isHighlighted = usedSet.has(tool.name);
-                        toolCard.className = `tool-card${isHighlighted ? ' tool-card-highlight' : ''}`;
-
-                        const toolName = document.createElement('div');
-                        toolName.className = 'tool-card-title';
-                        toolName.textContent = tool.name;
-
-                        const toolDesc = document.createElement('div');
-                        toolDesc.className = 'tool-card-description';
-                        toolDesc.textContent = tool.description;
-
-                        const argList = Array.isArray(tool.arguments) ? tool.arguments : [];
-                        toolCard.appendChild(toolName);
-                        toolCard.appendChild(toolDesc);
-                        if (argList.length) {
-                            const argsEl = document.createElement('div');
-                            argsEl.className = 'tool-card-args';
-                            argsEl.textContent = `Args: ${argList.map(arg => arg.name || '').filter(Boolean).join(', ')}`;
-                            toolCard.appendChild(argsEl);
-                        }
-                        toolsList.appendChild(toolCard);
-                    });
-                } else {
-                    toolsList.innerHTML = '<p class="subtle" style="padding: 8px;">No tools available</p>';
-                    currentToolsShown = [];
-                }
+                const tools = Array.isArray(data.tools) ? data.tools : [];
+                const usedSet = new Set((data.usedTools || []).map(name => String(name)));
 
                 currentExamplePrompt = data.exampleQuestion || '';
-                currentPromptIdeas = [];
+                const promptIdeas = Array.isArray(data.promptIdeas) ? data.promptIdeas.filter(Boolean) : [];
+                currentPromptIdeas = promptIdeas.length ? promptIdeas : (currentExamplePrompt ? [currentExamplePrompt] : []);
+
+                if (examplePromptInline) {
+                    examplePromptInline.textContent = currentExamplePrompt ? `Sample prompt: ${currentExamplePrompt}` : '';
+                }
+
+                if (!tools.length) {
+                    renderToolGroup(usedToolsListEl, [], data.error || 'No tools available right now.', false);
+                    renderToolGroup(unusedToolsListEl, [], 'No unused tools to show.', false);
+                    if (usedToolsCountEl) usedToolsCountEl.textContent = '0';
+                    if (unusedToolsCountEl) unusedToolsCountEl.textContent = '0';
+                    if (usedToolsDetails) usedToolsDetails.open = false;
+                    if (unusedToolsDetails) unusedToolsDetails.open = false;
+                    currentToolsShown = [];
+                    refreshRandomInstruction();
+                    return;
+                }
+
+                const usedTools = tools
+                    .filter(tool => usedSet.has(tool.name))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+                const unusedTools = tools
+                    .filter(tool => !usedSet.has(tool.name))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                renderToolGroup(usedToolsListEl, usedTools, 'No tools used in this example yet.', true);
+                renderToolGroup(unusedToolsListEl, unusedTools, 'All tools have been referenced.', false);
+
+                if (usedToolsCountEl) usedToolsCountEl.textContent = String(usedTools.length);
+                if (unusedToolsCountEl) unusedToolsCountEl.textContent = String(unusedTools.length);
+
+                if (usedToolsDetails) usedToolsDetails.open = false;
+                if (unusedToolsDetails) unusedToolsDetails.open = usedTools.length === 0 && unusedTools.length > 0;
+
+                currentToolsShown = [...usedTools, ...unusedTools].map(tool => ({
+                    name: tool.name,
+                    description: tool.description,
+                    status: usedSet.has(tool.name) ? 'used' : 'unused'
+                }));
+
+                refreshRandomInstruction();
             })
             .catch(err => {
                 console.warn('Failed to load Tiny Agent data', err);
-                document.getElementById('tools-list').innerHTML = '<p class="subtle" style="padding: 8px;">Error loading tools</p>';
+                renderToolGroup(usedToolsListEl, [], 'Error loading tools', false);
+                renderToolGroup(unusedToolsListEl, [], 'Unable to show additional tools', false);
+                if (usedToolsCountEl) usedToolsCountEl.textContent = '0';
+                if (unusedToolsCountEl) unusedToolsCountEl.textContent = '0';
+                if (usedToolsDetails) usedToolsDetails.open = false;
+                if (unusedToolsDetails) unusedToolsDetails.open = false;
+                if (examplePromptInline) examplePromptInline.textContent = '';
                 currentExamplePrompt = '';
                 currentPromptIdeas = [];
+                currentToolsShown = [];
+                refreshRandomInstruction();
             });
     }
 
     // Render at load
     renderStartTopics();
+    updateCommentButton();
     loadTinyAgentData(); // Load Tiny Agent tools & prompt on page load
     fetch("{{ url_for('static', filename='data/example_functions.json') }}")
         .then(r=>r.json())
@@ -840,11 +1058,6 @@
     let intentionalClose = false; // Track if connection close is intentional
     let recordingStartTime = null; // Track when recording started
     let recordingEndTime = null; // Track when recording ended
-    
-    // Track context metadata (tools shown, example prompt)
-    let currentToolsShown = [];
-    let currentExamplePrompt = '';
-    let currentPromptIdeas = [];
     
     async function startDeepgramStreaming() {
         console.log('Starting Deepgram streaming...');
@@ -1330,6 +1543,31 @@
         }
     });
 
+    commentBtn?.addEventListener('click', openCommentModal);
+    commentModalClose?.addEventListener('click', closeCommentModal);
+    commentCancelBtn?.addEventListener('click', closeCommentModal);
+    commentModal?.addEventListener('click', (event) => {
+        if (event.target === commentModal) {
+            closeCommentModal();
+        }
+    });
+    commentSaveBtn?.addEventListener('click', handleCommentSave);
+    commentTextarea?.addEventListener('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            event.preventDefault();
+            handleCommentSave();
+        }
+    });
+    commentTextarea?.addEventListener('input', () => {
+        if (commentErrorEl) commentErrorEl.classList.add('hidden');
+        commentTextarea.removeAttribute('aria-invalid');
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && commentModal?.classList.contains('show')) {
+            closeCommentModal();
+        }
+    });
+
     // Save chat button handler
         document.getElementById('save-chat-btn').addEventListener('click', function() {
             const payload = {
@@ -1347,7 +1585,12 @@
                 conversationLog: conversationLog,
                 evaluation: {
                     surveyResponses: {},
-                    userComments: ''
+                    userComments: '',
+                    sessionComments: sessionComments.map(comment => ({
+                        id: comment.id,
+                        text: comment.text,
+                        timestamp: comment.timestamp
+                    }))
                 }
             };
             fetch('/save_chat', {

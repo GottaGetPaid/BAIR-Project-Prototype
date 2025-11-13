@@ -74,6 +74,33 @@ body.auth-body {
     font-size: 15px;
 }
 
+.auth-description {
+    margin: 0 0 28px;
+    display: grid;
+    gap: 14px;
+}
+
+.auth-description-lead {
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.auth-description-list {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 10px;
+    color: var(--muted-text);
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.auth-description-list strong {
+    color: var(--text);
+}
+
 .auth-top-bar {
     width: min(640px, 100%);
     display: flex;
@@ -568,6 +595,275 @@ pre { background: var(--bg); border: 1px solid var(--panel-border); border-radiu
 .tool-card-args {
     font-size: 11px;
     color: var(--muted-text);
+}
+
+.tools-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.tools-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted-text);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.tools-toggle-btn {
+    width: 100%;
+    justify-content: space-between;
+    border: 1px solid var(--panel-border);
+    background: var(--panel-bg);
+    color: var(--text);
+    font-weight: 600;
+    border-radius: 12px;
+    padding: 12px 14px;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.tools-toggle-btn::after {
+    content: '\25BC';
+    font-size: 12px;
+    color: var(--muted-text);
+    transition: transform 0.2s ease;
+}
+
+.tools-toggle-btn.open::after {
+    transform: rotate(-180deg);
+}
+
+.tools-toggle-btn:hover {
+    border-color: var(--accent);
+    background: var(--bg);
+}
+
+.tools-dropdown {
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 12px;
+    background: var(--panel-bg);
+    display: grid;
+    gap: 12px;
+}
+
+.tools-dropdown details {
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    background: var(--bg);
+    overflow: hidden;
+}
+
+.tools-dropdown summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 10px 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.tools-dropdown summary::marker {
+    display: none;
+}
+
+.tools-dropdown summary::after {
+    content: '\25BC';
+    font-size: 12px;
+    color: var(--muted-text);
+    transition: transform 0.2s ease;
+}
+
+.tools-dropdown details[open] > summary::after {
+    transform: rotate(-180deg);
+}
+
+.count-pill {
+    font-size: 12px;
+    color: var(--muted-text);
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+.tool-list-grid {
+    display: grid;
+    gap: 10px;
+    padding: 0 14px 14px;
+}
+
+.tool-guidance {
+    border-top: 1px solid var(--panel-border);
+    padding: 16px 14px 12px;
+    background: var(--bg);
+    border-radius: 10px;
+}
+
+.tool-guidance-title {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 10px;
+    color: var(--text);
+}
+
+.tool-guidance-list {
+    margin: 0;
+    padding-left: 22px;
+    display: grid;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--muted-text);
+    line-height: 1.65;
+}
+
+.mic-instruction {
+    font-size: 14px;
+    color: var(--muted-text);
+    text-align: center;
+}
+
+.mic-action-row {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.comment-btn {
+    padding: 12px 18px;
+    border-radius: 999px;
+    border: none;
+    background: #dc2626;
+    color: #ffffff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    box-shadow: 0 8px 18px rgba(220, 38, 38, 0.25);
+}
+
+.comment-btn:hover {
+    background: #b91c1c;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(185, 28, 28, 0.3);
+}
+
+.comment-btn:active {
+    transform: scale(0.98);
+}
+
+.comment-btn:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.85);
+    outline-offset: 3px;
+}
+
+[data-theme="dark"] .comment-btn {
+    background: #ef4444;
+    color: #0f172a;
+    box-shadow: 0 10px 22px rgba(239, 68, 68, 0.35);
+}
+
+[data-theme="dark"] .comment-btn:hover {
+    background: #f87171;
+}
+
+.modal.comment-modal {
+    width: min(420px, 92%);
+    padding: 18px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.comment-modal-body {
+    display: grid;
+    gap: 12px;
+}
+
+.comment-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted-text);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.comment-textarea {
+    width: 100%;
+    min-height: 90px;
+    resize: vertical;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: var(--input-bg);
+    color: var(--text);
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.comment-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
+.comment-list {
+    max-height: 180px;
+    overflow-y: auto;
+    display: grid;
+    gap: 10px;
+    padding-right: 4px;
+}
+
+.comment-card {
+    border: 1px solid var(--panel-border);
+    background: var(--panel-bg);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 6px;
+}
+
+.comment-meta {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.comment-text {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
+.comment-error {
+    font-size: 13px;
+    color: #b91c1c;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.32);
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+.comment-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.comment-empty {
+    font-size: 13px;
+    color: var(--muted-text);
+    text-align: center;
+    padding: 16px 0;
 }
 
 @media (max-width: 768px) {

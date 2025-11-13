@@ -14,6 +14,14 @@
         <div class="auth-card">
             <h1>Welcome to Blanca</h1>
             <p class="auth-subtitle">Enter a username to continue. Your session data will be grouped under this name.</p>
+            <div class="auth-description">
+                <p class="auth-description-lead">BLANCA is a BAIR research effort to understand how people speak with language models so we can train reasoning-focused assistants.</p>
+                <ul class="auth-description-list">
+                    <li><strong>Why reasoning?</strong> Advanced, reasoning-based models take a little longer to respond but produce more accurate answers. We are exploring how to trigger that reasoning the moment you start speaking.</li>
+                    <li><strong>Your voice stays private.</strong> Audio recordings remain internal to BAIR. Only transcripts—with light semantic notes—may be shared publicly.</li>
+                    <li><strong>What to expect.</strong> Use the microphone to begin, explore the suggested topics, and keep each conversation natural and concise.</li>
+                </ul>
+            </div>
             <form method="post" action="{{ url_for('login') }}" class="auth-form">
                 <div class="auth-full-width">
                     <label for="username">Username</label>

@@ -967,7 +967,43 @@ def save_chat():
         context.setdefault('finalContent', '')
 
         conversation_log = payload.get('conversationLog') or []
-        evaluation = payload.get('evaluation') or {"surveyResponses": {}, "userComments": ""}
+        evaluation = payload.get('evaluation') or {}
+        if not isinstance(evaluation, dict):
+            evaluation = {}
+
+        if not isinstance(evaluation.get('surveyResponses'), dict):
+            evaluation['surveyResponses'] = {}
+
+        user_comments = evaluation.get('userComments')
+        if isinstance(user_comments, str):
+            evaluation['userComments'] = user_comments
+        elif user_comments is None:
+            evaluation['userComments'] = ""
+        else:
+            evaluation['userComments'] = str(user_comments)
+
+        raw_session_comments = evaluation.get('sessionComments', [])
+        cleaned_comments: list[dict[str, str]] = []
+        if isinstance(raw_session_comments, list):
+            for item in raw_session_comments:
+                if isinstance(item, dict):
+                    text = (item.get('text') or '').strip()
+                    if not text:
+                        continue
+                    cleaned_comments.append({
+                        "id": item.get('id') or str(uuid.uuid4()),
+                        "text": text,
+                        "timestamp": item.get('timestamp') or now_iso
+                    })
+                elif isinstance(item, str):
+                    text = item.strip()
+                    if text:
+                        cleaned_comments.append({
+                            "id": str(uuid.uuid4()),
+                            "text": text,
+                            "timestamp": now_iso
+                        })
+        evaluation['sessionComments'] = cleaned_comments
 
         final_payload = {
             "sessionInfo": session_info,

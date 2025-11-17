@@ -305,6 +305,53 @@ def _ensure_active_session(username_key: str, profile: dict, session_target: int
     return active_session
 
 
+def _soft_delete_user_voice_sessions(username_key: str) -> int:
+    """Mark all existing voice sessions for this user as deleted.
+
+    This does not remove any files. Instead it walks the user's
+    VOICE_RECORDINGS_FOLDER subdirectories and, for each prompt, updates
+    metadata.json and context.json (if present) to include
+    {"deleted": true}. Returns the number of sessions touched.
+    """
+    if not username_key:
+        return 0
+
+    prefix = f"{username_key}_session_"
+    if not os.path.isdir(VOICE_RECORDINGS_FOLDER):
+        return 0
+
+    updated_sessions = 0
+    try:
+        for entry in os.listdir(VOICE_RECORDINGS_FOLDER):
+            if not entry.startswith(prefix):
+                continue
+            session_dir = os.path.join(VOICE_RECORDINGS_FOLDER, entry)
+            if not os.path.isdir(session_dir):
+                continue
+            updated_sessions += 1
+            for prompt_entry in os.listdir(session_dir):
+                prompt_dir = os.path.join(session_dir, prompt_entry)
+                if not os.path.isdir(prompt_dir):
+                    continue
+                for name in ("metadata.json", "context.json"):
+                    path = os.path.join(prompt_dir, name)
+                    if not os.path.exists(path):
+                        continue
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if isinstance(data, dict):
+                            data["deleted"] = True
+                            with open(path, "w", encoding="utf-8") as f:
+                                json.dump(data, f, ensure_ascii=False, indent=2)
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"Failed to mark {path} as deleted: {exc}")
+    except OSError as exc:  # noqa: BLE001
+        print(f"Error walking voice recordings for soft delete: {exc}")
+
+    return updated_sessions
+
+
 def _normalize_topics(value) -> list[dict]:
     topics: list[dict] = []
     if isinstance(value, dict):
@@ -703,7 +750,7 @@ def _extract_used_tools(function_calls) -> list[str]:
     return used
 
 
-def _build_tiny_agent_payload() -> tuple[dict, int]:
+def _build_tiny_agent_payload(session_index: int | None = None) -> tuple[dict, int]:
     tools = _load_tiny_agent_tools()
     entries = _load_tiny_agent_entries()
 
@@ -725,7 +772,14 @@ def _build_tiny_agent_payload() -> tuple[dict, int]:
             "error": "Tiny Agent dataset not found"
         }, 404
 
-    selected_entry = random.choice(entries)
+    if session_index is not None and entries:
+        # Use a deterministic entry index per session to avoid repeats for the
+        # first N sessions (as long as len(entries) >= N). Clamp to the last
+        # entry if the requested index exceeds the dataset size.
+        safe_index = min(max(session_index, 0), len(entries) - 1)
+        selected_entry = entries[safe_index]
+    else:
+        selected_entry = random.choice(entries)
     example_question = _extract_question_text(selected_entry.get('question'))
     used_tools = _extract_used_tools(selected_entry.get('ground_truth_function_calls'))
 
@@ -795,7 +849,27 @@ def related_topics():
 
 @app.route('/get_tiny_agent_data', methods=['GET'])
 def get_tiny_agent_data():
-    payload, status = _build_tiny_agent_payload()
+    """Return Tiny Agent tools/prompt tied to the user's current session.
+
+    This ensures the example prompt and used tools change each session for
+    a given participant (no repeats for the first N sessions when enough
+    entries are available).
+    """
+    username_key = flask_session.get('username_key')
+    session_index = None
+    if username_key:
+        profiles = _load_user_profiles()
+        profile = profiles.get(username_key) or {}
+        active_session = flask_session.get('active_session') or {}
+        # Prefer the active session number; fall back to sessions_completed+1.
+        session_number = _to_int(active_session.get('session_number'), 0)
+        if not session_number:
+            session_number = _to_int(profile.get('sessions_completed'), 0) + 1
+        # Zero-based index for dataset selection
+        if session_number > 0:
+            session_index = session_number - 1
+
+    payload, status = _build_tiny_agent_payload(session_index=session_index)
     return jsonify(payload), status
 
 
@@ -852,6 +926,49 @@ def advance_session():
     return jsonify({
         "completed": False,
         "session": active_session,
+        "username": profile.get("username") or username,
+    }), 200
+
+
+@app.route('/sessions/restart', methods=['POST'])
+def restart_sessions():
+    """Restart the study run for the current user.
+
+    This marks all existing recorded sessions for this user as deleted
+    and resets the session counter back to 1 (sessions_completed = 0).
+    """
+    username = flask_session.get('username')
+    username_key = flask_session.get('username_key')
+    if not username or not username_key:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    profiles = _load_user_profiles()
+    profile = profiles.get(username_key)
+    if not profile:
+        return jsonify({"error": "Profile not found"}), 404
+
+    # Soft-delete prior voice sessions for this user
+    deleted_count = _soft_delete_user_voice_sessions(username_key)
+    print(f"Soft-deleted sessions for {username_key}: {deleted_count} session folders updated")
+
+    # Reset session counters for this run-through
+    profile['sessions_completed'] = 0
+    profile['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+    profiles[username_key] = profile
+    _save_user_profiles(profiles)
+
+    session_target = _get_session_target()
+    new_session = {
+        "session_id": _generate_session_id(username_key, 1),
+        "session_number": 1,
+        "sessions_completed": 0,
+        "session_target": session_target,
+    }
+    flask_session['active_session'] = new_session
+    flask_session.modified = True
+
+    return jsonify({
+        "session": new_session,
         "username": profile.get("username") or username,
     }), 200
 

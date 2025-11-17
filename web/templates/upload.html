@@ -19,7 +19,7 @@
             align-items: center;
             justify-content: center;
         }
-        
+
         /* Dark mode styling */
         @media (prefers-color-scheme: dark) {
             .mic-btn-large {
@@ -109,7 +109,8 @@
         <div class="left-panel">
             <div class="top-bar">
                 <div class="lhs-intro">
-                    <div class="subtle">Participant: <strong id="participant-username">{{ username }}</strong> · Sessions completed: <span id="sessions-completed">{{ user_profile.sessions_completed or 0 }}</span> / <span id="session-target">{{ session_target }}</span></div>
+                    <div class="subtle">Participant: <strong id="participant-username">{{ username }}</strong></div>
+                    <div class="subtle">Sessions completed: <span id="sessions-completed">{{ user_profile.sessions_completed or 0 }}</span> / <span id="session-target">{{ session_target }}</span></div>
                 </div>
                 <div class="session-controls" style="gap:8px;">
                     <button id="switch-user-btn" class="btn btn-ghost" title="Switch participant">Switch User</button>
@@ -120,12 +121,12 @@
             <div id="tools-panel" class="tools-panel">
                 <div class="tools-heading">Tools &amp; tips</div>
                 <div id="tools-dropdown" class="tools-dropdown">
-                    <details id="used-tools-details">
-                        <summary>Used tools <span id="used-tools-count" class="count-pill">0</span></summary>
+                    <details id="used-tools-details" open>
+                        <summary>Relevant tools <span id="used-tools-count" class="count-pill">0</span></summary>
                         <div id="used-tools-list" class="tool-list-grid"></div>
                     </details>
                     <details id="unused-tools-details">
-                        <summary>Unused tools <span id="unused-tools-count" class="count-pill">0</span></summary>
+                        <summary>Extra tools <span id="unused-tools-count" class="count-pill">0</span></summary>
                         <div id="unused-tools-list" class="tool-list-grid"></div>
                     </details>
                     
@@ -136,7 +137,7 @@
                             <li>Keep each conversation concise—aim for 3 to 4 turns, the language model is not suited for long, complex instructions (it will not physically do the tasks you request)</li>
                             <li>It's fine if the voice model messes up the transcription. You may start a new session or continue going. The goal is to capture the voice data.</li>
                             <li>If you accidentally said something you wish does not become public, please use our comment feature and we will remove this session from the training data.</li>
-                            <li> If at any point you wish to end the session, please press the start new session icon on the top right of your screen</li>
+                            <li>If at any point you wish to end the session, please press the Next button on the top right of your screen</li>
                         </ul>
                     </div>
                 </div>
@@ -158,10 +159,12 @@
     <div class="right-panel">
         <div class="form-container query-form-container">
             <div class="query-header">
-                <h3 id="query-interface-title">Query Interface <span id="session-indicator" class="session-indicator">Session {{ session_data.session_number if session_data else 1 }} of {{ session_target }}</span></h3>
+                <div class="query-header-main">
+                    <h3 id="query-interface-title">Query Interface</h3>
+                </div>
                 <div id="example-prompt-inline" class="example-prompt-inline subtle"></div>
                 <div class="session-controls">
-                    <button type="button" id="start-session-btn" class="btn btn-primary">Start New Session</button>
+                    <button type="button" id="start-session-btn" class="btn btn-primary">Next</button>
                 </div>
             </div>
             <div id="query-conversation" class="query-conversation">
@@ -174,6 +177,7 @@
                         <div class="voice-level-indicator"></div>
                     </button>
                     <button type="button" id="comment-btn" class="comment-btn" title="Add a session comment">Add Comment</button>
+                    <button type="button" id="restart-session-btn" class="btn btn-ghost restart-session-btn" title="Restart this participant's sessions">Restart Session</button>
                 </div>
             </div>
         </div>
@@ -494,6 +498,8 @@
                 participantUsernameEl.textContent = data.username;
             }
             resetConversationForNewSession();
+            // Load a fresh Tiny Agent example and tools for the new session
+            loadTinyAgentData();
         } catch (err) {
             console.error('Failed to advance session', err);
             alert(err.message || 'Unable to start a new session. Please try again.');
@@ -651,17 +657,28 @@
         tools.forEach((tool) => {
             const toolCard = document.createElement('div');
             toolCard.className = `tool-card${highlightCards ? ' tool-card-highlight' : ''}`;
+            
+            const header = document.createElement('div');
+            header.className = 'tool-card-header';
 
             const toolName = document.createElement('div');
             toolName.className = 'tool-card-title';
             toolName.textContent = (tool && tool.name) ? tool.name : 'Unnamed tool';
 
+            const toggle = document.createElement('div');
+            toggle.className = 'tool-card-toggle';
+            toggle.textContent = 'Details';
+
+            header.appendChild(toolName);
+            header.appendChild(toggle);
+
+            const body = document.createElement('div');
+            body.className = 'tool-card-body collapsed';
+
             const toolDesc = document.createElement('div');
             toolDesc.className = 'tool-card-description';
             toolDesc.textContent = (tool && tool.description) ? tool.description : '';
-
-            toolCard.appendChild(toolName);
-            toolCard.appendChild(toolDesc);
+            body.appendChild(toolDesc);
 
             const argList = tool && Array.isArray(tool.arguments)
                 ? tool.arguments.map(arg => arg.name || '').filter(Boolean)
@@ -670,8 +687,16 @@
                 const argsEl = document.createElement('div');
                 argsEl.className = 'tool-card-args';
                 argsEl.textContent = `Args: ${argList.join(', ')}`;
-                toolCard.appendChild(argsEl);
+                body.appendChild(argsEl);
             }
+
+            header.addEventListener('click', () => {
+                const isCollapsed = body.classList.toggle('collapsed');
+                toggle.textContent = isCollapsed ? 'Details' : 'Hide details';
+            });
+
+            toolCard.appendChild(header);
+            toolCard.appendChild(body);
 
             listEl.appendChild(toolCard);
         });
@@ -690,7 +715,9 @@
                 currentPromptIdeas = promptIdeas.length ? promptIdeas : (currentExamplePrompt ? [currentExamplePrompt] : []);
 
                 if (examplePromptInline) {
-                    examplePromptInline.textContent = currentExamplePrompt ? `Sample prompt: ${currentExamplePrompt}` : '';
+                    examplePromptInline.innerHTML = currentExamplePrompt
+                        ? `<strong>Sample prompt:</strong> ${currentExamplePrompt}`
+                        : '';
                 }
 
                 if (!tools.length) {
@@ -718,7 +745,8 @@
                 if (usedToolsCountEl) usedToolsCountEl.textContent = String(usedTools.length);
                 if (unusedToolsCountEl) unusedToolsCountEl.textContent = String(unusedTools.length);
 
-                if (usedToolsDetails) usedToolsDetails.open = false;
+                // Keep Relevant tools expanded by default; only auto-open Extra tools when there are no relevant tools
+                if (usedToolsDetails) usedToolsDetails.open = true;
                 if (unusedToolsDetails) unusedToolsDetails.open = usedTools.length === 0 && unusedTools.length > 0;
 
                 currentToolsShown = [...usedTools, ...unusedTools].map(tool => ({
@@ -1378,6 +1406,38 @@
         }
         
         // Note: Socket will be closed after receiving LLM response (handled in onmessage)
+    }
+
+    // Restart session handler: reset counters back to Session 1 and ask backend to soft-delete prior sessions
+    const restartSessionBtn = document.getElementById('restart-session-btn');
+    if (restartSessionBtn) {
+        restartSessionBtn.addEventListener('click', async () => {
+            const confirmed = window.confirm('Restart sessions for this participant? This will mark previous sessions in this run as deleted.');
+            if (!confirmed) return;
+
+            restartSessionBtn.disabled = true;
+            const originalLabel = restartSessionBtn.textContent;
+            restartSessionBtn.textContent = 'Restarting…';
+            try {
+                const res = await fetch('/sessions/restart', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok || data.error) {
+                    throw new Error(data.error || `Request failed (${res.status})`);
+                }
+                if (data.session) {
+                    applyStudySessionPayload(data.session);
+                    resetConversationForNewSession();
+                    // Reload Tiny Agent data so the restarted Session 1 gets a new example/tools
+                    loadTinyAgentData();
+                }
+            } catch (err) {
+                console.error('Failed to restart sessions', err);
+                alert(err.message || 'Unable to restart sessions. Please try again.');
+            } finally {
+                restartSessionBtn.disabled = false;
+                restartSessionBtn.textContent = originalLabel;
+            }
+        });
     }
 
     // --- Logic for chunked recording (Whisper/Gemini) ---

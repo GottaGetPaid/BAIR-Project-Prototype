@@ -525,7 +525,7 @@ def logout():
 def index():
     username = flask_session.get('username')
     username_key = flask_session.get('username_key')
-
+    random.seed(username_key)  # Seed random for consistent topic suggestions per user
     if not username:
         return redirect(url_for('login'))
 
@@ -628,6 +628,27 @@ def query():
             else:
                 if not hf_token: print("No HUGGING_FACE_API_TOKEN found; returning default message.")
                 if not AppConfig.HF_MODEL_ID: print("No HF_MODEL_ID found; returning default message.")
+        elif backend == 'openai':
+            print(f"Sending query to OpenAI model: {AppConfig.OPENAI_MODEL}...")
+            api_key = AppConfig.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
+            if api_key and AppConfig.OPENAI_MODEL:
+                try:
+                    client = openai.OpenAI(api_key=api_key)
+                    response = client.chat.completions.create(
+                        model=AppConfig.OPENAI_MODEL,
+                        messages=[
+                            {"role": "system", "content": "Respond to this in exactly 1 sentence."},
+                            {"role": "user", "content": query_text},
+                        ],
+                    )
+                    if response.choices:
+                        response_text = response.choices[0].message.content or default_msg
+                except Exception as model_err:
+                    print(f"OpenAI model error: {model_err}")
+                    response_text = default_msg
+            else:
+                if not api_key: print("No OPENAI_API_KEY found; returning default message.")
+                if not AppConfig.OPENAI_MODEL: print("No OPENAI_MODEL found; returning default message.")
         else:
             print(f"Model backend is '{backend}'. No action taken.")
             response_text = "No model backend selected. Please set MODEL_BACKEND in your .env file."
@@ -726,7 +747,7 @@ def _load_tiny_agent_entries() -> list[dict]:
                     continue
     except OSError:
         entries = []
-
+    random.shuffle(entries)
     TINY_AGENT_ENTRIES_CACHE = entries
     return entries
 
@@ -1539,9 +1560,19 @@ Keep your responses conversational and under 2 sentences."
                 if api_key and genai is not None:
                     genai.configure(api_key=api_key)
                     model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                    response = model.generate_content(f"Respond naturally and briefly to: {transcript}")
+                    response = model.generate_content(messages)
                     return getattr(response, 'text', None)
-                    
+            elif backend == 'openai':
+                api_key = AppConfig.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
+                if api_key and AppConfig.OPENAI_MODEL:
+                    client = openai.OpenAI(api_key=api_key)
+                    response = client.chat.completions.create(
+                        model=AppConfig.OPENAI_MODEL,
+                        messages=messages,
+                    )
+                    if response.choices:
+                        return response.choices[0].message.content
+
         except Exception as e:
             print(f"LLM response error: {e}")
             
@@ -1564,6 +1595,8 @@ def stt_deepgram(ws):
     deepgram_ready = threading.Event()
     
     def deepgram_handler():
+        llm_response_done = threading.Event()
+        awaiting_llm_response = threading.Event()
         try:
             # Connect to Deepgram's streaming API with word-level timestamps and utterances
             # filler_words=true captures "uh", "um", etc.
@@ -1663,6 +1696,19 @@ def stt_deepgram(ws):
                 on_close=on_close
             )
             
+            stream_closed = threading.Event()
+
+            def close_deepgram_stream():
+                if stream_closed.is_set():
+                    return
+                stream_closed.set()
+                try:
+                    if deepgram_ws.sock and deepgram_ws.sock.connected:
+                        deepgram_ws.send(json.dumps({"type": "CloseStream"}))
+                        print("Sent CloseStream control message to Deepgram")
+                except Exception as close_err:
+                    print(f"Failed to send CloseStream to Deepgram: {close_err}")
+            
             # Forward audio from client to Deepgram
             def forward_audio():
                 try:
@@ -1672,6 +1718,7 @@ def stt_deepgram(ws):
                         return
                     
                     print("Starting audio forwarding loop...")
+                    stream_active = True
                     while True:
                         try:
                             # Use timeout to avoid blocking forever
@@ -1720,52 +1767,59 @@ def stt_deepgram(ws):
                                             "total_duration": 0.0
                                         }
                                         
+                                        awaiting_llm_response.set()
                                         # Get LLM response
                                         def get_response():
                                             import asyncio
                                             loop = asyncio.new_event_loop()
                                             asyncio.set_event_loop(loop)
-                                            session_id_key = session_id or conversation.session_id
-                                            print(f"Session ID Key: {session_id_key}")
-                                            history_key = f"utterances:{session_id_key}" if session_id_key else None
-                                            if history_key:
-                                                session_history = [] if is_first_prompt else list(SESSIONS.get(history_key, []))
-                                            else:
-                                                if is_first_prompt:
-                                                    conversation.utterances = []
-                                                session_history = list(conversation.utterances)
-                                            session_history.append(current_transcript)
-                                            response = loop.run_until_complete(
-                                                conversation.get_llm_response(session_history)
-                                            )
-                                            session_history.append(response or "")
-                                            if history_key:
-                                                SESSIONS[history_key] = session_history
-                                            conversation.utterances = session_history
-                                            conversation.session_id = session_id_key
-                                            if response:
-                                                try:
-                                                    ws.send(json.dumps({
-                                                        "llm_response": response,
-                                                        "user_transcript": current_transcript,  # Plain transcript without pause markers
-                                                        "recording_path": recording_path,  # For saving audio file
-                                                        "type": "manual_submit"
-                                                    }))
-                                                    print(f"✓ Sent LLM response successfully (recording_path: {recording_path})")
-                                                except Exception as e:
-                                                    print(f"Failed to send LLM response (connection may be closed): {e}")
-                                            loop.close()
+                                            try:
+                                                session_id_key = session_id or conversation.session_id
+                                                print(f"Session ID Key: {session_id_key}")
+                                                history_key = f"utterances:{session_id_key}" if session_id_key else None
+                                                if history_key:
+                                                    session_history = [] if is_first_prompt else list(SESSIONS.get(history_key, []))
+                                                else:
+                                                    if is_first_prompt:
+                                                        conversation.utterances = []
+                                                    session_history = list(conversation.utterances)
+                                                session_history.append(current_transcript)
+                                                response = loop.run_until_complete(
+                                                    conversation.get_llm_response(session_history)
+                                                )
+                                                session_history.append(response or "")
+                                                if history_key:
+                                                    SESSIONS[history_key] = session_history
+                                                conversation.utterances = session_history
+                                                conversation.session_id = session_id_key
+                                                if response:
+                                                    try:
+                                                        ws.send(json.dumps({
+                                                            "llm_response": response,
+                                                            "user_transcript": current_transcript,  # Plain transcript without pause markers
+                                                            "recording_path": recording_path,  # For saving audio file
+                                                            "type": "manual_submit"
+                                                        }))
+                                                        print(f"✓ Sent LLM response successfully (recording_path: {recording_path})")
+                                                    except Exception as e:
+                                                        print(f"Failed to send LLM response (connection may be closed): {e}")
+                                            finally:
+                                                loop.close()
+                                                llm_response_done.set()
                                         
                                         threading.Thread(target=get_response, daemon=True).start()
+                                        close_deepgram_stream()
+                                        stream_active = False
+                                        break
                                 except json.JSONDecodeError:
                                     print(f"Invalid control message: {data}")
                             
                             # Handle audio data (binary)
                             elif isinstance(data, bytes):
-                                if deepgram_ws.sock and deepgram_ws.sock.connected:
+                                if stream_active and deepgram_ws.sock and deepgram_ws.sock.connected:
                                     deepgram_ws.send(data, websocket.ABNF.OPCODE_BINARY)
                                 else:
-                                    print("Deepgram socket not connected")
+                                    print("Deepgram socket not connected or stream already closed")
                                     break
                         except Exception as e:
                             # Check if it's just a timeout or actual error
@@ -1785,6 +1839,9 @@ def stt_deepgram(ws):
             
             # Run Deepgram WebSocket
             deepgram_ws.run_forever()
+            if awaiting_llm_response.is_set() and not llm_response_done.is_set():
+                print("Awaiting LLM response before closing client socket...")
+                llm_response_done.wait()
             
         except Exception as e:
             print(f"Deepgram handler error: {e}")

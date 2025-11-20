@@ -6,3 +6,4 @@ __pycache__/
 test-sessions/
 queries/queries.csv
 .DS_Store
+data/

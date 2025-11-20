@@ -206,6 +206,7 @@ By default, the `MODEL_BACKEND` is set to `noop`. To use a real model, set the `
 
 - **`gemini`**: Uses the Gemini 1.5 Flash model. Requires `GOOGLE_API_KEY` to be set.
 - **`huggingface`**: Uses the Hugging Face Inference API. Requires `HUGGING_FACE_API_TOKEN` and a `HF_MODEL_ID` to be set.
+- **`openai`**: Uses OpenAI’s Chat Completions API (e.g., `gpt-5-mini`). Requires `OPENAI_API_KEY` plus optional overrides such as `OPENAI_MODEL`, `OPENAI_MAX_TOKENS`, and `OPENAI_TEMPERATURE`.
 
 ---
 

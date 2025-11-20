@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class AppConfig:
-    MODEL_BACKEND = os.getenv("MODEL_BACKEND", "noop").lower()
+    MODEL_BACKEND = os.getenv("MODEL_BACKEND", "openai").lower()
 
     # HF
     HF_MODEL_ID = os.getenv("HF_MODEL_ID", "")
@@ -13,14 +13,17 @@ class AppConfig:
     HF_TEMPERATURE = float(os.getenv("HF_TEMPERATURE", "0.7"))
     HUGGING_FACE_API_TOKEN = os.getenv("HUGGING_FACE_API_TOKEN")
 
+    # OpenAI
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano-2025-08-07")
+
     # Flask
     SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-secret")
 
     # Speech-to-Text (STT)
     # Options: "gemini" (Google Generative AI), "whisper" (OpenAI Whisper), "deepgram_streaming"
-    STT_BACKEND = os.getenv("STT_BACKEND", "whisper_local").lower()
+    STT_BACKEND = os.getenv("STT_BACKEND", "deepgram_streaming").lower()
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
     # Study sessions
-    SESSION_TARGET = int(os.getenv("SESSION_TARGET", "2"))
-
+    SESSION_TARGET = int(os.getenv("SESSION_TARGET", "20"))  # Target number of sessions

@@ -1445,6 +1445,8 @@ class ConversationManager:
         self.last_speech_time = time.time()
         self.silence_threshold = 2.0  # seconds of silence before considering interjection
         self.conversation_context = []
+        self.utterances: list[str] = []  # alternating user/assistant turns
+        self.session_id: Optional[str] = None
         self.voice_metadata = {  # Store detailed voice metadata
             "words": [],  # word-level timestamps
             "utterances": [],  # utterance boundaries
@@ -1480,24 +1482,55 @@ class ConversationManager:
                 
         return False
     
-    async def get_llm_response(self, transcript):
+    async def get_llm_response(self, utterances: list[str]):
         """Get response from the configured LLM"""
+        SYSTEM_PROMPT = """"You are having a helpful AI assistant. Respond naturally and briefly to the user's requests.
+
+Assume you have access to the following tools:
+"append_note_content": Appends content to an existing note. If a folder is specified, the note is created in that folder; otherwise, it's created in the default folder. Returns the status of the content appending.
+"compose_new_email": Composes a new email and returns the status of the email composition. The recipients and cc parameters can be a single email or a list of emails. The attachments parameter can be a single file path or a list of file paths. The context parameter is optional and should only be used to pass down some intermediate result. Otherwise, just leave it as empty string.
+"create_calendar_event": Create a calendar event. The format for start_date and end_date is 'YYYY-MM-DD HH:MM:SS'. For invitees, you need a list of email addresses; use an empty list if not applicable. For location, notes, and calendar, use an empty string or None if not applicable. Returns the status of the event creation.
+"create_note": Creates a new note with the given content. The name is used as the title of the note. The content is the main text of the note. The folder is optional, use an empty string if not applicable. Returns the status of the note creation.
+"create_reminder": Creates a new reminder and returns the status of the reminder creation. The format for due_date is 'YYYY-MM-DD HH:MM:SS'. If 'all_day' is True, then the format is 'YYYY-MM-DD'. The list_name is optional, use an empty string if not applicable. The priority is optional and defaults to 0. The all_day parameter is optional and defaults to False.
+"forward_email": Forwards the currently selected email in Mail with the given content. The recipients and cc parameters can be a single email or a list of emails. The attachments parameter can be a single file path or a list of file paths. The context parameter is optional and should only be used to pass down some intermediate result. Otherwise, just leave it as empty string.
+"get_email_address": Search for a contact by name. Returns the email address of the contact.
+"get_phone_number": Search for a contact by name. Returns the phone number of the contact.
+"get_zoom_meeting_link": Creates a Zoom meeting and returns the join URL. You need to call create_calendar_event to attach the zoom link as a note to the calendar event. topic, start_time, duration, and meeting_invitees are required. duration is in minutes. The format for start_time is 'YYYY-MM-DD HH:MM:SS'.
+"maps_open_location": Open the specified location in Apple Maps. The query can be a place name, address, or coordinates. Returns the status of the location opening.
+"maps_show_directions": Show directions from a start location to an end location in Apple Maps. The transport parameter defaults to 'd' (driving), but can also be 'w' (walking) or 'r' (public transit). The start location can be left empty to default to the current location of the device. Returns the status of the direction showing.
+"open_and_get_file_path": Opens the file and returns its path.
+"open_note": Opens an existing note by its name. If a folder is specified, the note is created in that folder; otherwise, it's created in the default folder. Returns the content of the note.
+"reply_to_email": Replies to the currently selected email in Mail with the given content. The cc parameter can be a single email or a list of emails. The attachments parameter can be a single file path or a list of file paths. The context parameter is optional and should only be used to pass down some intermediate result. Otherwise, just leave it as empty string.
+"send_sms": Send an SMS to a list of phone numbers. The recipients argument can be a single phone number or a list of phone numbers. Returns the status of the SMS.
+"summarize_pdf": Summarizes the content of a PDF file and returns the summary. This tool can only be used AFTER calling open_and_get_file_path tool to get the PDF file path.
+
+You will NOT be actually executing these tools, but you should respond as if you were able to, and how you have successfully done so.
+For example, if the user asks you to "Create a note with the content 'Buy milk'", you should respond with "Note created successfully" or something similar.
+
+Keep your responses conversational and under 2 sentences."
+"""
         try:
             backend = AppConfig.MODEL_BACKEND
-            
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+            ]
+            for i, utterance in enumerate(utterances):
+                if i % 2 == 0:
+                    messages.append({"role": "user", "content": utterance})
+                else:
+                    messages.append({"role": "assistant", "content": utterance})
             if backend == 'huggingface':
                 hf_token = AppConfig.HUGGING_FACE_API_TOKEN
                 if hf_token and AppConfig.HF_MODEL_ID:
                     client = InferenceClient(token=hf_token)
+                    print(f"Sending messages to Hugging Face: {messages}")
                     response = client.chat_completion(
-                        messages=[
-                            {"role": "system", "content": "You are having a natural conversation. Respond naturally and briefly to what the user just said. Keep responses conversational and under 2 sentences."},
-                            {"role": "user", "content": transcript}
-                        ],
+                        messages=messages,
                         model=AppConfig.HF_MODEL_ID,
                         max_tokens=100,
                         temperature=AppConfig.HF_TEMPERATURE or None,
                     )
+                    print(f"Hugging Face response: {response}")
                     if response.choices:
                         return response.choices[0].message.content
                         
@@ -1692,7 +1725,24 @@ def stt_deepgram(ws):
                                             import asyncio
                                             loop = asyncio.new_event_loop()
                                             asyncio.set_event_loop(loop)
-                                            response = loop.run_until_complete(conversation.get_llm_response(current_transcript))
+                                            session_id_key = session_id or conversation.session_id
+                                            print(f"Session ID Key: {session_id_key}")
+                                            history_key = f"utterances:{session_id_key}" if session_id_key else None
+                                            if history_key:
+                                                session_history = [] if is_first_prompt else list(SESSIONS.get(history_key, []))
+                                            else:
+                                                if is_first_prompt:
+                                                    conversation.utterances = []
+                                                session_history = list(conversation.utterances)
+                                            session_history.append(current_transcript)
+                                            response = loop.run_until_complete(
+                                                conversation.get_llm_response(session_history)
+                                            )
+                                            session_history.append(response or "")
+                                            if history_key:
+                                                SESSIONS[history_key] = session_history
+                                            conversation.utterances = session_history
+                                            conversation.session_id = session_id_key
                                             if response:
                                                 try:
                                                     ws.send(json.dumps({
